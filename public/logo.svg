@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#09100F" />
+      <stop offset="80%" stop-color="#050708" />
+    </radialGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="120" height="120" rx="24" fill="url(#bg)" />
+
+  <text x="60" y="50" fill="#F3F4F6" font-family="Segoe UI, sans-serif" font-weight="900" font-size="56" letter-spacing="-2" text-anchor="middle" dominant-baseline="middle" filter="url(#glow)">FC</text>
+
+  <text x="60" y="94" fill="#A0A2A5" font-family="Segoe UI, sans-serif" font-weight="700" font-size="12" letter-spacing="0.8" text-anchor="middle" dominant-baseline="middle" textLength="88" lengthAdjust="spacingAndGlyphs">FANLINK CHATTING</text>
+</svg>
