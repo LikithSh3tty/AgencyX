@@ -323,6 +323,9 @@ function TabBar({ active, onChange }) {
 function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
   const isSingle = list.length === 1;
   const totalCut = list.reduce((s, c) => s + c.chatterCut, 0);
+  const singlePercent = list[0]?.chatterCutPercent !== undefined ? (list[0].chatterCutPercent * 100).toFixed(1) + "%" : "12.5%";
+  const uniquePercents = [...new Set(list.map((c) => c.chatterCutPercent))].filter((p) => p !== undefined);
+  const displayPercentStr = uniquePercents.length === 1 ? ` (${(uniquePercents[0] * 100).toFixed(1)}%)` : "";
 
   return (
     <Modal open={true} onClose={onClose} title="Share Earnings">
@@ -363,14 +366,14 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
               background: "rgba(251,191,36,0.06)", borderRadius: 12, padding: "16px 18px",
               border: "1px solid rgba(251,191,36,0.08)",
             }}>
-              <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, marginBottom: 4 }}>YOUR EARNINGS (12.5%)</div>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, marginBottom: 4 }}>YOUR EARNINGS ({singlePercent})</div>
               <div style={{ fontSize: 26, fontWeight: 700, color: C.earn }}>{fmt(list[0].chatterCut)}</div>
             </div>
           </div>
         ) : (
           <div>
             <div style={{ fontSize: 11, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>
-              {clientNameStr || "All Clients"} — Chatter Earnings (12.5%)
+              {clientNameStr || "All Clients"} — Chatter Earnings{displayPercentStr}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
               {list.filter((c) => c.chatterCut > 0).map((c, i) => (
@@ -785,6 +788,16 @@ function App() {
   const totalAgency = data.records.filter((r) => dashFilterDate === "all" || r.date === dashFilterDate).reduce((s, r) => s + r.agencyCut, 0);
   const totalChatterPay = data.records.filter((r) => dashFilterDate === "all" || r.date === dashFilterDate).reduce((s, r) => s + r.chatterCut, 0);
 
+  const uniqueAgCuts = data.clients.length > 0
+    ? [...new Set(data.clients.map((cl) => cl.agencyCut !== undefined ? cl.agencyCut : AGENCY_CUT))]
+    : [AGENCY_CUT];
+  const uniqueChCuts = data.clients.length > 0
+    ? [...new Set(data.clients.map((cl) => cl.chatterCut !== undefined ? cl.chatterCut : CHATTER_CUT))]
+    : [CHATTER_CUT];
+
+  const agencyCutLabel = uniqueAgCuts.length === 1 ? `Your Cut · ${(uniqueAgCuts[0] * 100).toFixed(1)}%` : "Your Cut";
+  const chatterCutLabel = uniqueChCuts.length === 1 ? `Chatter Pay · ${(uniqueChCuts[0] * 100).toFixed(1)}%` : "Chatter Pay";
+
   const clientStats = data.clients.map((cl) => {
     const recs = data.records.filter((r) => (dashFilterDate === "all" || r.date === dashFilterDate) && data.chatters.find((c) => c.id === r.chatterId)?.clientId === cl.id);
     return { id: cl.id, name: cl.name, total: recs.reduce((s, r) => s + r.amount, 0), agency: recs.reduce((s, r) => s + r.agencyCut, 0), chatterPay: recs.reduce((s, r) => s + r.chatterCut, 0), chatterCount: data.chatters.filter((c) => c.clientId === cl.id).length };
@@ -801,6 +814,33 @@ function App() {
 
   const bulkTotal = Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => acc + chatterSum(cid, vals), 0);
   const bulkHas = bulkTotal > 0;
+
+  const bulkAgencyTotal = Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
+    const chatter = data.chatters.find((c) => c.id === cid);
+    const client = data.clients.find((cl) => cl.id === chatter?.clientId);
+    const agCut = client?.agencyCut !== undefined ? client.agencyCut : AGENCY_CUT;
+    return acc + chatterSum(cid, vals) * agCut;
+  }, 0);
+
+  const bulkChatterTotal = Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
+    const chatter = data.chatters.find((c) => c.id === cid);
+    const client = data.clients.find((cl) => cl.id === chatter?.clientId);
+    const chCut = client?.chatterCut !== undefined ? client.chatterCut : CHATTER_CUT;
+    return acc + chatterSum(cid, vals) * chCut;
+  }, 0);
+
+  const batchCuts = salesChatters.filter((c) => chatterSum(c.id) > 0).map((c) => {
+    const cl = data.clients.find((x) => x.id === c.clientId);
+    return {
+      ag: cl?.agencyCut !== undefined ? cl.agencyCut : AGENCY_CUT,
+      ch: cl?.chatterCut !== undefined ? cl.chatterCut : CHATTER_CUT
+    };
+  });
+  const uniqueBatchAgCuts = [...new Set(batchCuts.map((c) => c.ag))];
+  const uniqueBatchChCuts = [...new Set(batchCuts.map((c) => c.ch))];
+
+  const batchAgLabel = uniqueBatchAgCuts.length === 1 ? `Your cut (${(uniqueBatchAgCuts[0] * 100).toFixed(1)}%)` : "Your cut";
+  const batchChLabel = uniqueBatchChCuts.length === 1 ? `Chatter pay (${(uniqueBatchChCuts[0] * 100).toFixed(1)}%)` : "Chatter pay";
 
   const filteredRecords = data.records.filter((r) => {
     const chatter = data.chatters.find((c) => c.id === r.chatterId);
@@ -946,8 +986,8 @@ function App() {
 
             <div className="mobile-grid" style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 28 }}>
               <StatCard label="Total Sales" value={fmt(totalSales)} accent="var(--accent-glow)" />
-              <StatCard label="Your Cut · 7.5%" value={fmt(totalAgency)} accent="rgba(173,255,180,0.08)" />
-              <StatCard label="Chatter Pay · 12.5%" value={fmt(totalChatterPay)} accent="rgba(251,191,36,0.08)" />
+              <StatCard label={agencyCutLabel} value={fmt(totalAgency)} accent="rgba(173,255,180,0.08)" />
+              <StatCard label={chatterCutLabel} value={fmt(totalChatterPay)} accent="rgba(251,191,36,0.08)" />
             </div>
 
             <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-dim)", marginBottom: 14, letterSpacing: 0.5 }}>By Client</h3>
@@ -982,7 +1022,13 @@ function App() {
                           )}
                           {clChatters.some((ch) => ch.chatterPay > 0) && (
                             <button onClick={() => setShareCard({
-                              chatters: clChatters.filter((ch) => ch.chatterPay > 0).map((ch) => ({ name: ch.name, chatterCut: ch.chatterPay })),
+                              chatters: clChatters.filter((ch) => ch.chatterPay > 0).map((ch) => {
+                                return {
+                                  name: ch.name,
+                                  chatterCut: ch.chatterPay,
+                                  chatterCutPercent: cl.chatterCut !== undefined ? cl.chatterCut : CHATTER_CUT
+                                };
+                              }),
                               clientNameStr: cl.name, date: "All Time",
                             })} style={{
                               background: C.accentDim, border: "none", borderRadius: 6, color: C.accent,
@@ -1006,7 +1052,11 @@ function App() {
                             <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: C.earn }}>{fmt(ch.chatterPay)}</span>
                             {ch.chatterPay > 0 && (
                               <button onClick={() => setShareCard({
-                                chatters: [{ name: ch.name, chatterCut: ch.chatterPay }],
+                                chatters: [{
+                                  name: ch.name,
+                                  chatterCut: ch.chatterPay,
+                                  chatterCutPercent: data.clients.find((cl) => cl.id === ch.clientId)?.chatterCut ?? CHATTER_CUT
+                                }],
                                 clientNameStr: clientNameFn(ch.clientId), date: "All Time",
                               })} style={{
                                 background: C.accentDim, border: "none", borderRadius: 5, color: C.accent,
@@ -1070,6 +1120,9 @@ function App() {
                     const vals = getVals(c.id);
                     const total = chatterSum(c.id, bulkAmounts[c.id]);
                     const has = total > 0;
+                    const client = data.clients.find((cl) => cl.id === c.clientId);
+                    const clientAgencyCut = client?.agencyCut !== undefined ? client.agencyCut : AGENCY_CUT;
+                    const clientChatterCut = client?.chatterCut !== undefined ? client.chatterCut : CHATTER_CUT;
                     return (
                       <div key={c.id} style={{ marginBottom: 8 }}>
                         <form onSubmit={(e) => handleFormSubmit(e, c.id, vals.length - 1)} className="mobile-p-small" style={{
@@ -1142,16 +1195,16 @@ function App() {
                               </div>
                               <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.06)" }} />
                               <div>
-                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>YOU (7.5%)</div>
-                                <div style={{ fontSize: 14, fontWeight: 600, color: C.accent2, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(total * AGENCY_CUT)}</div>
+                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>YOU ({(clientAgencyCut * 100).toFixed(1)}%)</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: C.accent2, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(total * clientAgencyCut)}</div>
                               </div>
                               <div>
-                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>THEM (12.5%)</div>
-                                <div style={{ fontSize: 14, fontWeight: 600, color: C.earn, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(total * CHATTER_CUT)}</div>
+                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>THEM ({(clientChatterCut * 100).toFixed(1)}%)</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: C.earn, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(total * clientChatterCut)}</div>
                               </div>
                             </div>
                             <button onClick={() => setShareCard({
-                              chatters: [{ name: c.name, chatterCut: total * CHATTER_CUT }],
+                              chatters: [{ name: c.name, chatterCut: total * clientChatterCut, chatterCutPercent: clientChatterCut }],
                               clientNameStr: clientNameFn(c.clientId), date: shortDate(salesDate),
                             })} style={{
                               background: "linear-gradient(135deg," + C.accent3 + ",#2a9d38)",
@@ -1177,7 +1230,11 @@ function App() {
                         Batch Summary — {shortDate(salesDate)}
                       </div>
                       <button onClick={() => {
-                        const allCh = salesChatters.filter((c) => chatterSum(c.id) > 0).map((c) => ({ name: c.name, chatterCut: chatterSum(c.id) * CHATTER_CUT }));
+                        const allCh = salesChatters.filter((c) => chatterSum(c.id) > 0).map((c) => {
+                          const cl = data.clients.find((x) => x.id === c.clientId);
+                          const chCut = cl?.chatterCut !== undefined ? cl.chatterCut : CHATTER_CUT;
+                          return { name: c.name, chatterCut: chatterSum(c.id) * chCut, chatterCutPercent: chCut };
+                        });
                         if (allCh.length) setShareCard({ chatters: allCh, clientNameStr: salesClientId === "all" ? "All Clients" : clientNameFn(salesClientId), date: shortDate(salesDate) });
                       }} style={{
                         background: "linear-gradient(135deg," + C.accent3 + ",#2a9d38)",
@@ -1191,12 +1248,12 @@ function App() {
                       <span style={{ color: C.accent, fontWeight: 700 }}>{fmt(bulkTotal)}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span style={{ color: C.textDim, fontSize: 13 }}>Your cut (7.5%)</span>
-                      <span style={{ color: C.accent2, fontWeight: 600 }}>{fmt(bulkTotal * AGENCY_CUT)}</span>
+                      <span style={{ color: C.textDim, fontSize: 13 }}>{batchAgLabel}</span>
+                      <span style={{ color: C.accent2, fontWeight: 600 }}>{fmt(bulkAgencyTotal)}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ color: C.textDim, fontSize: 13 }}>Chatter pay (12.5%)</span>
-                      <span style={{ color: C.earn, fontWeight: 600 }}>{fmt(bulkTotal * CHATTER_CUT)}</span>
+                      <span style={{ color: C.textDim, fontSize: 13 }}>{batchChLabel}</span>
+                      <span style={{ color: C.earn, fontWeight: 600 }}>{fmt(bulkChatterTotal)}</span>
                     </div>
                   </div>
                 )}
