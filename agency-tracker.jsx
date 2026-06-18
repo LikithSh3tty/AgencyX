@@ -3,7 +3,10 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 const STORAGE_KEY = "fanlink-tracker-v4";
 const defaultState = { clients: [], chatters: [], records: [] };
 
-const genId = () => Math.random().toString(36).slice(2, 10);
+const genId = () =>
+  (typeof crypto !== "undefined" && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 const today = () => new Date().toISOString().slice(0, 10);
 const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 const shortDate = (d) => {
@@ -546,6 +549,8 @@ function App() {
   const [newClientAgencyCut, setNewClientAgencyCut] = useState(7.5);
   const [newClientChatterCut, setNewClientChatterCut] = useState(12.5);
   const [newChatterName, setNewChatterName] = useState("");
+  const [editAgCut, setEditAgCut] = useState("");
+  const [editChCut, setEditChCut] = useState("");
 
   // Sharing & Invoices
   const [shareCard, setShareCard] = useState(null);
@@ -572,6 +577,14 @@ function App() {
   }, []);
 
   const persist = (d) => { setData(d); saveData(d); };
+
+  // Populate the edit-cut fields whenever a client is opened for editing.
+  useEffect(() => {
+    if (editingClient) {
+      setEditAgCut(((editingClient.agencyCut ?? AGENCY_CUT) * 100).toString());
+      setEditChCut(((editingClient.chatterCut ?? CHATTER_CUT) * 100).toString());
+    }
+  }, [editingClient]);
 
   const addClient = () => {
     const c = { id: genId(), name: newClientName, agencyCut: newClientAgencyCut / 100, chatterCut: newClientChatterCut / 100 };
@@ -921,7 +934,7 @@ function App() {
           .mobile-grid-2 { grid-template-columns: 1fr 1fr !important; }
           .mobile-p-small { padding: 12px 14px !important; }
           .mobile-font-small { font-size: 13px !important; }
-          .mobile-mb-none { marginBottom: 0 !important; }
+          .mobile-mb-none { margin-bottom: 0 !important; }
           .mobile-scroll-x { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
         }
         `}
@@ -1154,7 +1167,8 @@ function App() {
                                     type="number" placeholder="0" value={v}
                                     data-chatter-id={c.id}
                                     data-input-idx={idx}
-                                    id={c.id}
+                                    id={key}
+                                    aria-label={c.name + " sale amount " + (idx + 1)}
                                     enterKeyHint="next"
                                     inputMode="decimal"
                                     onChange={(e) => setVal(c.id, idx, e.target.value)}
@@ -1492,22 +1506,31 @@ function App() {
             <p style={{ fontSize: 13, color: C.textDim, marginBottom: 18 }}>Update paycut percentages for <strong>{editingClient.name}</strong>.</p>
             <div style={{ display: "flex", gap: 12 }}>
               <Field label="Agency Cut (%)">
-                <input type="number" step="0.1" defaultValue={(editingClient.agencyCut || AGENCY_CUT) * 100}
-                  id="edit-ag-cut" style={inpStyle} />
+                <input type="number" step="0.1" min="0" max="100" value={editAgCut}
+                  onChange={(e) => setEditAgCut(e.target.value)}
+                  aria-label="Agency cut percent" style={inpStyle} />
               </Field>
               <Field label="Chatter Pay (%)">
-                <input type="number" step="0.1" defaultValue={(editingClient.chatterCut || CHATTER_CUT) * 100}
-                  id="edit-ch-cut" style={inpStyle} />
+                <input type="number" step="0.1" min="0" max="100" value={editChCut}
+                  onChange={(e) => setEditChCut(e.target.value)}
+                  aria-label="Chatter pay percent" style={inpStyle} />
               </Field>
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
-              <Btn variant="secondary" onClick={() => setEditingClient(null)}>Cancel</Btn>
-              <Btn onClick={() => {
-                const ag = parseFloat(document.getElementById("edit-ag-cut").value) / 100;
-                const ch = parseFloat(document.getElementById("edit-ch-cut").value) / 100;
-                updateClientCuts(editingClient.id, ag, ch);
-              }}>Save Changes</Btn>
-            </div>
+            {(() => {
+              const ag = parseFloat(editAgCut), ch = parseFloat(editChCut);
+              const invalid = isNaN(ag) || isNaN(ch) || ag < 0 || ch < 0 || ag + ch > 100;
+              return (
+                <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+                  <span style={{ fontSize: 11, color: invalid ? "#ef4444" : C.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>
+                    {invalid ? "Enter valid percentages (0–100, sum ≤ 100)" : `Creator keeps ${(100 - ag - ch).toFixed(1)}%`}
+                  </span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn variant="secondary" onClick={() => setEditingClient(null)}>Cancel</Btn>
+                    <Btn disabled={invalid} onClick={() => updateClientCuts(editingClient.id, ag / 100, ch / 100)}>Save changes</Btn>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
       </Modal>
