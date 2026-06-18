@@ -56,3 +56,15 @@ errors with a missing rollup module, run `npm install @rollup/rollup-linux-x64-g
       injected window.print() (unreliable on mobile Safari/Chrome) with a real visible
       print window that waits for images and uses print-safe colors. Hidden iframe kept
       only as a fallback when popups are blocked (desktop). printElement() in the file.
+
+## Productization (selling to other agencies) — frontend config layer
+- [x] Step 1 — Hardcoding audit → see AUDIT.md (checklist of everything agency-specific).
+- [ ] Step 2 — Config schema + safe defaults (defaults = current values, no visible change).
+- [ ] Step 3 — Wire config through app via context (plumbing, no visible change).
+- [ ] Step 4 — Locale-aware currency + amount-in-words.
+- [ ] Step 5 — Terminology pass (config-driven labels; keep internal keys).
+- [ ] Step 6 — Branding pass (name/logo/accent from config).
+- [ ] Step 7 — De-hardcode invoice (address, tax line, number format, notes).
+- [ ] Step 8 — Flexible commission engine (%, flat, tiered) — the core, do carefully.
+- [ ] Step 9 — Settings screen to edit all of the above.
+- [ ] Step 10 — Onboarding wizard + agency presets (digital / web / chatting).
