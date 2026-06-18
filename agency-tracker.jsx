@@ -9,6 +9,27 @@ const genId = () =>
     : Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 const today = () => new Date().toISOString().slice(0, 10);
 const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+
+function useCountUp(target, duration = 1000) {
+  const [val, setVal] = useState(0);
+  const fromRef = useRef(0);
+  useEffect(() => {
+    const reduce = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || typeof requestAnimationFrame === "undefined") { setVal(target); fromRef.current = target; return; }
+    const from = fromRef.current;
+    const start = (typeof performance !== "undefined" ? performance.now() : Date.now());
+    let raf;
+    const tick = (t) => {
+      const p = Math.min(1, ((typeof performance !== "undefined" ? t : Date.now()) - start) / duration);
+      const e = 1 - Math.pow(1 - p, 3);
+      setVal(from + (target - from) * e);
+      if (p < 1) raf = requestAnimationFrame(tick); else fromRef.current = target;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return val;
+}
 const shortDate = (d) => {
   const dt = new Date(d + "T00:00:00");
   return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -200,9 +221,9 @@ function Btn({ children, onClick, disabled, variant, style: s }) {
   const isPrimary = variant !== "secondary";
   const base = isPrimary
     ? {
-      background: disabled ? "rgba(94,234,212,0.15)" : "linear-gradient(135deg," + C.accent3 + ",#2a9d38)",
+      background: disabled ? "rgba(94,234,212,0.15)" : "linear-gradient(135deg, var(--accent), var(--accent2))",
       color: "#04231b",
-      boxShadow: disabled ? "none" : "0 4px 24px rgba(94,234,212,0.2)",
+      boxShadow: disabled ? "none" : "0 6px 26px rgba(94,234,212,0.28), inset 0 1px 0 rgba(255,255,255,0.4)",
     }
     : {
       background: "rgba(255,255,255,0.04)",
@@ -210,29 +231,40 @@ function Btn({ children, onClick, disabled, variant, style: s }) {
       color: "rgba(255,255,255,0.6)",
     };
   return (
-    <button onClick={onClick} disabled={disabled} style={{
+    <button onClick={onClick} disabled={disabled} className={isPrimary ? "btnp" : "btns"} style={{
       padding: "11px 24px", border: "none", borderRadius: 11, fontSize: 14, fontWeight: 700,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: "'Outfit',sans-serif",
-      transition: "all 0.2s", opacity: disabled ? 0.5 : 1, ...base, ...s,
+      transition: "transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease, background 0.2s ease",
+      opacity: disabled ? 0.5 : 1, ...base, ...s,
     }}>{children}</button>
   );
 }
 
-function StatCard({ label, value, accent }) {
+function StatCard({ label, amount, accent, gradient, delay = 0 }) {
+  const animated = useCountUp(typeof amount === "number" ? amount : 0);
   return (
-    <div style={{
-      background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14,
+    <div className="lift rise" style={{
+      background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 16,
       padding: "20px 24px", flex: "1 1 180px", minWidth: 155, position: "relative", overflow: "hidden",
+      boxShadow: "0 14px 34px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.04)",
+      animationDelay: delay + "ms",
     }}>
       <div style={{
-        position: "absolute", top: -12, right: -12, width: 65, height: 65, borderRadius: "50%",
-        background: accent || C.accentGlow, filter: "blur(20px)",
+        position: "absolute", top: -12, right: -12, width: 72, height: 72, borderRadius: "50%",
+        background: accent || C.accentGlow, filter: "blur(22px)",
       }} />
       <div style={{
         fontSize: 11, color: C.textDim, letterSpacing: 1, textTransform: "uppercase",
-        marginBottom: 6, fontFamily: "'JetBrains Mono',monospace",
+        marginBottom: 8, fontFamily: "'JetBrains Mono',monospace",
       }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
+      <div style={{
+        fontSize: 27, fontWeight: 700, letterSpacing: -0.5, fontFamily: "'Outfit',sans-serif",
+        fontVariantNumeric: "tabular-nums",
+        ...(gradient ? {
+          background: "linear-gradient(120deg, #fff 10%, var(--accent) 70%, var(--accent2))",
+          WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+        } : {}),
+      }}>{fmt(animated)}</div>
     </div>
   );
 }
@@ -994,6 +1026,9 @@ function App() {
         .rise { opacity: 0; animation: riseIn 0.55s cubic-bezier(.2,.8,.2,1) forwards; }
         .lift { transition: transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .28s ease, border-color .28s ease; }
         .lift:hover { transform: translateY(-3px); box-shadow: 0 22px 46px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08); border-color: var(--accent-border); }
+        .btnp:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(94,234,212,0.42), inset 0 1px 0 rgba(255,255,255,0.5); filter: brightness(1.04); }
+        .btnp:active:not(:disabled) { transform: translateY(0); }
+        .btns:hover:not(:disabled) { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.85); }
         .glass { backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
         :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
         @media (prefers-reduced-motion: reduce) {
@@ -1129,9 +1164,9 @@ function App() {
             </div>
 
             <div className="mobile-grid" style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 28 }}>
-              <StatCard label="Total Sales" value={fmt(totalSales)} accent="var(--accent-glow)" />
-              <StatCard label={agencyCutLabel} value={fmt(totalAgency)} accent="rgba(94,234,212,0.08)" />
-              <StatCard label={chatterCutLabel} value={fmt(totalChatterPay)} accent="rgba(251,191,36,0.08)" />
+              <StatCard label="Total Sales" amount={totalSales} accent="var(--accent-glow)" gradient delay={0} />
+              <StatCard label={agencyCutLabel} amount={totalAgency} accent="rgba(94,234,212,0.08)" delay={70} />
+              <StatCard label={chatterCutLabel} amount={totalChatterPay} accent="rgba(167,139,250,0.10)" delay={140} />
             </div>
 
             <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-dim)", marginBottom: 14, letterSpacing: 0.5 }}>By Client</h3>
