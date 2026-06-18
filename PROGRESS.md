@@ -45,3 +45,14 @@ errors with a missing rollup module, run `npm install @rollup/rollup-linux-x64-g
 - Header (theme swatches + badges) ~line 1015
 - History tab (records table, backup panel) ~line 1450
 - Modals (edit client cuts, edit record, smart paste) + undo toast ~line 1500+
+
+## Visual redesign pass 2 (done)
+- [x] Step E — Animated split donut (agency / chatter / creator) on dashboard, with
+      arcs that sweep in and a legend showing amount + %. Colors: agency = emerald,
+      chatters = violet, creators = amber (consistent everywhere now).
+- [x] Carried the look into Clients (elevated lift cards + stagger, chatter row hover)
+      and History (record-row hover, violet chatter-pay accent to match the ring).
+- [x] Fix — Mobile invoice/history print was blank: replaced hidden 0x0 iframe +
+      injected window.print() (unreliable on mobile Safari/Chrome) with a real visible
+      print window that waits for images and uses print-safe colors. Hidden iframe kept
+      only as a fallback when popups are blocked (desktop). printElement() in the file.
