@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 const STORAGE_KEY = "fanlink-tracker-v4";
 const defaultState = { clients: [], chatters: [], records: [] };
@@ -265,6 +265,94 @@ function StatCard({ label, amount, accent, gradient, delay = 0 }) {
           WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
         } : {}),
       }}>{fmt(animated)}</div>
+    </div>
+  );
+}
+
+function RevenueTrend({ records, delay = 0 }) {
+  const series = useMemo(() => {
+    const byDate = {};
+    records.forEach((r) => { byDate[r.date] = (byDate[r.date] || 0) + r.amount; });
+    return Object.keys(byDate).sort().slice(-30).map((d) => ({ date: d, value: byDate[d] }));
+  }, [records]);
+
+  const lineRef = useRef(null);
+  const W = 1000, H = 170, pad = 14;
+
+  const geom = useMemo(() => {
+    if (series.length === 0) return null;
+    const vals = series.map((s) => s.value);
+    const max = Math.max(...vals), min = Math.min(...vals, 0);
+    const span = max - min || 1;
+    const n = series.length;
+    const xs = (i) => (n === 1 ? W / 2 : (i / (n - 1)) * (W - pad * 2) + pad);
+    const ys = (v) => H - pad - ((v - min) / span) * (H - pad * 2);
+    const pts = series.map((s, i) => [xs(i), ys(s.value)]);
+    let d = "M" + pts[0][0] + "," + pts[0][1];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i], [x1, y1] = pts[i + 1], cx = (x0 + x1) / 2;
+      d += " C" + cx + "," + y0 + " " + cx + "," + y1 + " " + x1 + "," + y1;
+    }
+    if (pts.length === 1) d += " L" + (pts[0][0] + 0.1) + "," + pts[0][1];
+    return { line: d, fill: d + ` L${W - pad},${H} L${pad},${H} Z`, last: pts[pts.length - 1], max, total: vals.reduce((a, b) => a + b, 0) };
+  }, [series]);
+
+  useEffect(() => {
+    const el = lineRef.current;
+    if (!el || !el.getTotalLength) return;
+    let len; try { len = el.getTotalLength(); } catch { return; }
+    if (!len) return;
+    const reduce = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return;
+    el.style.strokeDasharray = len; el.style.strokeDashoffset = len;
+    el.getBoundingClientRect();
+    el.style.transition = "stroke-dashoffset 1.3s cubic-bezier(.2,.8,.2,1)";
+    if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(() => { el.style.strokeDashoffset = 0; });
+  }, [geom]);
+
+  return (
+    <div className="rise lift" style={{
+      background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 18, padding: "20px 22px 8px",
+      marginBottom: 28, position: "relative", overflow: "hidden", animationDelay: delay + "ms",
+      boxShadow: "0 18px 44px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.05)",
+    }}>
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none",
+        background: "radial-gradient(420px 200px at 6% -30%, rgba(94,234,212,0.12), transparent 70%)" }} />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", position: "relative", zIndex: 1 }}>
+        <div>
+          <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 1.4, textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" }}>Revenue trend</div>
+          <div style={{ fontSize: 13, color: C.textMuted, marginTop: 4 }}>
+            {series.length === 0 ? "No sales recorded yet" : `Across ${series.length} active ${series.length === 1 ? "day" : "days"}`}
+          </div>
+        </div>
+        {geom && <div style={{ fontSize: 13, fontWeight: 700, color: C.accent, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(geom.total)}</div>}
+      </div>
+
+      {geom ? (
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} style={{ marginTop: 6, display: "block" }} aria-label="Revenue trend line chart">
+          <defs>
+            <linearGradient id="rtfill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#34D399" stopOpacity="0.34" />
+              <stop offset="100%" stopColor="#34D399" stopOpacity="0" />
+            </linearGradient>
+            <linearGradient id="rtstroke" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#34D399" />
+              <stop offset="100%" stopColor="#5EEAD4" />
+            </linearGradient>
+          </defs>
+          <path d={geom.fill} fill="url(#rtfill)" />
+          <path ref={lineRef} d={geom.line} fill="none" stroke="url(#rtstroke)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx={geom.last[0]} cy={geom.last[1]} r="4.5" fill="#5EEAD4" />
+          <circle cx={geom.last[0]} cy={geom.last[1]} r="4.5" fill="#5EEAD4" opacity="0.4">
+            <animate attributeName="r" values="4.5;11;4.5" dur="2.2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.4;0;0.4" dur="2.2s" repeatCount="indefinite" />
+          </circle>
+        </svg>
+      ) : (
+        <div style={{ height: H, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted, fontSize: 13 }}>
+          Your revenue trend will appear here once you log sales.
+        </div>
+      )}
     </div>
   );
 }
@@ -1168,6 +1256,8 @@ function App() {
               <StatCard label={agencyCutLabel} amount={totalAgency} accent="rgba(94,234,212,0.08)" delay={70} />
               <StatCard label={chatterCutLabel} amount={totalChatterPay} accent="rgba(167,139,250,0.10)" delay={140} />
             </div>
+
+            <RevenueTrend records={data.records} delay={180} />
 
             <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-dim)", marginBottom: 14, letterSpacing: 0.5 }}>By Client</h3>
             {clientStats.length === 0 ? (
