@@ -20,7 +20,7 @@ Build check after any change: `node node_modules/vite/bin/vite.js build` (or `np
       route remaining hardcoded colors through CSS vars
 - [x] Step 4 — Accessibility pass: aria-labels on icon-only buttons, labelled inputs,
       visible keyboard focus, respect reduced-motion
-- [ ] Step 5 — Settings: JSON backup export + import (local file, no backend)
+- [x] Step 5 — Settings: JSON backup export + import (local file, no backend)
 - [ ] Step 6 — Smart Paste: review/confirm screen before applying + respect parsed currency
 
 ## Deferred (bigger, do deliberately later)

@@ -585,6 +585,7 @@ function App() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
   const inputRefs = useRef({});
+  const importRef = useRef(null);
 
   useEffect(() => {
     loadData().then((d) => { if (d) { setData(d); if (d.theme && THEMES[d.theme]) setCurrentTheme(d.theme); } setLoading(false); });
@@ -844,12 +845,51 @@ function App() {
   };
 
   const exportCSV = (recs) => {
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
     const headers = ["Chatter", "Client", "Date", "Total Amount", "Agency Cut", "Chatter Pay"];
     const rows = recs.map((r) => [chatterNameFn(r.chatterId), clientNameFn(chatterClientFn(r.chatterId)), r.date, r.amount, r.agencyCut, r.chatterCut]);
-    const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
+    const csv = [headers, ...rows].map((r) => r.map(esc).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `sales_report_${today()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportBackup = () => {
+    const payload = JSON.stringify({ _app: "fanlink-tracker", _version: 4, _exportedAt: new Date().toISOString(), ...data }, null, 2);
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `fanlink-backup-${today()}.json`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const p = JSON.parse(reader.result);
+        if (!p || !Array.isArray(p.clients) || !Array.isArray(p.chatters) || !Array.isArray(p.records)) {
+          alert("That file isn't a valid backup — it should contain clients, chatters and records."); return;
+        }
+        const ok = window.confirm(
+          `Import ${p.clients.length} clients, ${p.chatters.length} chatters and ${p.records.length} sales?\n\nThis replaces everything currently in the app. Export a backup first if you're unsure.`
+        );
+        if (!ok) return;
+        const theme = p.theme && THEMES[p.theme] ? p.theme : currentTheme;
+        persist({ clients: p.clients, chatters: p.chatters, records: p.records, theme });
+        setCurrentTheme(theme);
+      } catch {
+        alert("Couldn't read that file — make sure it's a JSON backup exported from this app.");
+      } finally {
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
   };
 
   const printReport = () => { printElement("history-printable", "Sales_History_" + today()); };
@@ -1449,6 +1489,25 @@ function App() {
                 <Btn variant="secondary" onClick={printReport} style={{ fontSize: 12, padding: "8px 14px", display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
                   🖨️ Print
                 </Btn>
+              </div>
+            </div>
+
+            {/* Local data backup — everything lives in this browser, so keep a copy */}
+            <div className="no-print" style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12,
+              marginBottom: 24, padding: "14px 18px", background: C.card,
+              border: "1px solid " + C.cardBorder, borderRadius: 14,
+            }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Backup &amp; restore</div>
+                <div style={{ fontSize: 11.5, color: C.textDim, marginTop: 2 }}>
+                  Your data is stored only in this browser. Save a backup file regularly so you don't lose it.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn variant="secondary" onClick={exportBackup} style={{ fontSize: 12, padding: "8px 14px" }}>⬇ Save backup</Btn>
+                <Btn variant="secondary" onClick={() => importRef.current && importRef.current.click()} style={{ fontSize: 12, padding: "8px 14px" }}>⬆ Restore</Btn>
+                <input ref={importRef} type="file" accept="application/json,.json" onChange={handleImportFile} style={{ display: "none" }} aria-hidden="true" />
               </div>
             </div>
 
