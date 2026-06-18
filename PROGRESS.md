@@ -16,7 +16,7 @@ Build check after any change: `node node_modules/vite/bin/vite.js build` (or `np
       - `genId` Math.random → `crypto.randomUUID()` (with fallback)
       - Edit-Cuts modal `document.getElementById(...).value` → React state + validation
 - [x] Step 2 — Per-record edit & delete, with an undo toast
-- [ ] Step 3 — Theme switcher (finish the dead `currentTheme` feature) + persist choice;
+- [x] Step 3 — Theme switcher (finish the dead `currentTheme` feature) + persist choice;
       route remaining hardcoded colors through CSS vars
 - [ ] Step 4 — Accessibility pass: aria-labels on icon-only buttons, labelled inputs,
       visible keyboard focus, respect reduced-motion

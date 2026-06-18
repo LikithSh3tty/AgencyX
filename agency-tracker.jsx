@@ -49,6 +49,8 @@ const THEMES = {
     textDim: "rgba(255,255,255,0.45)",
     textMuted: "rgba(255,255,255,0.25)",
     earn: "#fbbf24",
+    surface: "var(--surface)",
+    surface2: "#0d100e",
     blur: "blur(16px)",
   },
   glass: {
@@ -65,6 +67,8 @@ const THEMES = {
     textDim: "rgba(255,255,255,0.5)",
     textMuted: "rgba(255,255,255,0.3)",
     earn: "#fbbf24",
+    surface: "#161b2e",
+    surface2: "#10131f",
     blur: "blur(24px)",
   },
   sunset: {
@@ -81,6 +85,8 @@ const THEMES = {
     textDim: "rgba(255,255,255,0.5)",
     textMuted: "rgba(255,255,255,0.3)",
     earn: "#fbbf24",
+    surface: "#241016",
+    surface2: "#1b0b10",
     blur: "blur(20px)",
   }
 };
@@ -98,6 +104,8 @@ const C = {
   textDim: "var(--text-dim)",
   textMuted: "var(--text-muted)",
   earn: "var(--earn)",
+  surface: "var(--surface)",
+  surface2: "var(--surface2)",
   blur: "var(--blur)",
 };
 
@@ -187,7 +195,7 @@ function Modal({ open, onClose, title, children }) {
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        background: "#111412", border: "1px solid " + C.cardBorder, borderRadius: 20,
+        background: "var(--surface)", border: "1px solid " + C.cardBorder, borderRadius: 20,
         padding: "28px 32px", width: "92%", maxWidth: 440,
         boxShadow: "0 40px 80px rgba(0,0,0,0.5)", maxHeight: "85vh", overflowY: "auto",
       }}>
@@ -579,10 +587,12 @@ function App() {
   const inputRefs = useRef({});
 
   useEffect(() => {
-    loadData().then((d) => { if (d) setData(d); setLoading(false); });
+    loadData().then((d) => { if (d) { setData(d); if (d.theme && THEMES[d.theme]) setCurrentTheme(d.theme); } setLoading(false); });
   }, []);
 
   const persist = (d) => { setData(d); saveData(d); };
+
+  const changeTheme = (t) => { setCurrentTheme(t); persist({ ...data, theme: t }); };
 
   // Populate the edit-cut fields whenever a client is opened for editing.
   useEffect(() => {
@@ -937,6 +947,8 @@ function App() {
           --text-dim: ${THEMES[currentTheme].textDim};
           --text-muted: ${THEMES[currentTheme].textMuted};
           --earn: ${THEMES[currentTheme].earn};
+          --surface: ${THEMES[currentTheme].surface};
+          --surface2: ${THEMES[currentTheme].surface2};
           --blur: ${THEMES[currentTheme].blur};
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1007,9 +1019,25 @@ function App() {
               <div className="mobile-hide" style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'JetBrains Mono',monospace", letterSpacing: 1 }}>Chatting Agency</div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 5 }}>
-            <Badge>{data.clients.length} <span className="mobile-hide">clients</span></Badge>
-            <Badge>{data.chatters.length} <span className="mobile-hide">chatters</span></Badge>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div role="group" aria-label="Color theme" style={{ display: "flex", gap: 5, padding: "4px 6px", background: "var(--surface2)", borderRadius: 9, border: "1px solid var(--card-border)" }}>
+              {Object.entries(THEMES).map(([key, t]) => (
+                <button key={key} onClick={() => changeTheme(key)}
+                  aria-label={"Theme: " + t.name} title={t.name}
+                  aria-pressed={currentTheme === key}
+                  style={{
+                    width: 18, height: 18, borderRadius: "50%", cursor: "pointer", padding: 0,
+                    background: t.accent,
+                    border: currentTheme === key ? "2px solid #fff" : "2px solid transparent",
+                    boxShadow: currentTheme === key ? `0 0 0 2px ${t.accent}` : "none",
+                    transition: "transform 0.15s",
+                  }} />
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 5 }}>
+              <Badge>{data.clients.length} <span className="mobile-hide">clients</span></Badge>
+              <Badge>{data.chatters.length} <span className="mobile-hide">chatters</span></Badge>
+            </div>
           </div>
         </div>
       </div>
@@ -1029,7 +1057,7 @@ function App() {
                   value={dashFilterDate === "all" ? "" : dashFilterDate}
                   onChange={(e) => setDashFilterDate(e.target.value || "all")}
                   style={{
-                    padding: "7px 12px", background: "#111412", border: "1px solid rgba(255,255,255,0.06)",
+                    padding: "7px 12px", background: "var(--surface)", border: "1px solid rgba(255,255,255,0.06)",
                     borderRadius: 9, color: "#fff", fontSize: 13, fontFamily: "'Outfit',sans-serif", cursor: "pointer"
                   }}
                 />
@@ -1160,14 +1188,14 @@ function App() {
                 </Btn>
                 <Btn variant="secondary" onClick={() => setSmartPasteOpen(true)} style={{ marginBottom: 14, fontSize: 12, padding: "8px 16px" }}>✨ Smart Paste</Btn>
                 <Field label="Client">
-                  <select value={salesClientId} onChange={(e) => setSalesClientId(e.target.value)} style={{ ...inpStyle, width: 170, cursor: "pointer", background: "#111412" }}>
+                  <select value={salesClientId} onChange={(e) => setSalesClientId(e.target.value)} style={{ ...inpStyle, width: 170, cursor: "pointer", background: "var(--surface)" }}>
                     <option value="">Select Client...</option>
                     <option value="all">All Clients</option>
                     {data.clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.name}</option>)}
                   </select>
                 </Field>
                 <Field label="Date">
-                  <input type="date" value={salesDate} onChange={(e) => setSalesDate(e.target.value)} style={{ ...inpStyle, width: 150, background: "#111412" }} />
+                  <input type="date" value={salesDate} onChange={(e) => setSalesDate(e.target.value)} style={{ ...inpStyle, width: 150, background: "var(--surface)" }} />
                 </Field>
               </div>
             </div>
@@ -1426,13 +1454,13 @@ function App() {
               border: "1px solid " + C.cardBorder, borderRadius: 16
             }}>
               <Field label="Client">
-                <select value={filterClient} onChange={(e) => { setFilterClient(e.target.value); setFilterChatter("all"); }} style={{ ...inpStyle, cursor: "pointer", background: "#111412" }}>
+                <select value={filterClient} onChange={(e) => { setFilterClient(e.target.value); setFilterChatter("all"); }} style={{ ...inpStyle, cursor: "pointer", background: "var(--surface)" }}>
                   <option value="all">All Clients</option>
                   {data.clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.name}</option>)}
                 </select>
               </Field>
               <Field label="Chatter">
-                <select value={filterChatter} onChange={(e) => setFilterChatter(e.target.value)} style={{ ...inpStyle, cursor: "pointer", background: "#111412" }}>
+                <select value={filterChatter} onChange={(e) => setFilterChatter(e.target.value)} style={{ ...inpStyle, cursor: "pointer", background: "var(--surface)" }}>
                   <option value="all">All Chatters</option>
                   {(filterClient === "all" ? data.chatters : data.chatters.filter((ch) => ch.clientId === filterClient)).map((ch) => (
                     <option key={ch.id} value={ch.id}>{ch.name}</option>
@@ -1440,7 +1468,7 @@ function App() {
                 </select>
               </Field>
               <Field label="Month">
-                <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ ...inpStyle, cursor: "pointer", background: "#111412" }}>
+                <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ ...inpStyle, cursor: "pointer", background: "var(--surface)" }}>
                   <option value="all">All Months</option>
                   {months.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
