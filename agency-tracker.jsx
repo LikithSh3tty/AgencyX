@@ -556,6 +556,12 @@ function App() {
   const [shareCard, setShareCard] = useState(null);
   const [invoiceView, setInvoiceView] = useState(null);
 
+  // Record edit + undo-delete
+  const [editRecord, setEditRecord] = useState(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [lastDeleted, setLastDeleted] = useState(null);
+
   // Filters
   const [dashFilterDate, setDashFilterDate] = useState("all");
   const [filterClient, setFilterClient] = useState("all");
@@ -585,6 +591,48 @@ function App() {
       setEditChCut(((editingClient.chatterCut ?? CHATTER_CUT) * 100).toString());
     }
   }, [editingClient]);
+
+  // Populate edit fields when a sale record is opened.
+  useEffect(() => {
+    if (editRecord) {
+      setEditAmount(String(editRecord.amount));
+      setEditDate(editRecord.date);
+    }
+  }, [editRecord]);
+
+  // Auto-dismiss the undo toast after a few seconds.
+  useEffect(() => {
+    if (!lastDeleted) return;
+    const t = setTimeout(() => setLastDeleted(null), 6000);
+    return () => clearTimeout(t);
+  }, [lastDeleted]);
+
+  const deleteRecord = (r) => {
+    setLastDeleted(r);
+    persist({ ...data, records: data.records.filter((x) => x.id !== r.id) });
+  };
+
+  const undoDelete = () => {
+    if (!lastDeleted) return;
+    persist({ ...data, records: [...data.records, lastDeleted] });
+    setLastDeleted(null);
+  };
+
+  const updateRecord = () => {
+    if (!editRecord) return;
+    const amt = parseFloat(editAmount);
+    if (isNaN(amt) || amt <= 0 || !editDate) return;
+    // Preserve the cut rates the record was originally booked at.
+    const agRate = editRecord.amount ? editRecord.agencyCut / editRecord.amount : AGENCY_CUT;
+    const chRate = editRecord.amount ? editRecord.chatterCut / editRecord.amount : CHATTER_CUT;
+    const records = data.records.map((r) =>
+      r.id === editRecord.id
+        ? { ...r, amount: amt, date: editDate, agencyCut: amt * agRate, chatterCut: amt * chRate }
+        : r
+    );
+    persist({ ...data, records });
+    setEditRecord(null);
+  };
 
   const addClient = () => {
     const c = { id: genId(), name: newClientName, agencyCut: newClientAgencyCut / 100, chatterCut: newClientChatterCut / 100 };
@@ -1422,7 +1470,7 @@ function App() {
               ) : (
                 <div className="mobile-scroll-x" style={{ borderRadius: 14, overflow: "hidden", border: "1px solid " + C.cardBorder }}>
                   <div style={{
-                    display: "grid", gridTemplateColumns: "1fr 0.8fr 0.7fr 0.9fr 0.7fr 0.7fr 36px",
+                    display: "grid", gridTemplateColumns: "1fr 0.8fr 0.7fr 0.9fr 0.7fr 0.7fr 64px",
                     minWidth: 600, padding: "10px 18px", background: "rgba(173,255,180,0.015)",
                     fontSize: 10, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace",
                     letterSpacing: 0.7, textTransform: "uppercase", gap: 6,
@@ -1431,7 +1479,7 @@ function App() {
                   </div>
                   {filteredRecords.map((r) => (
                     <div key={r.id} style={{
-                      display: "grid", gridTemplateColumns: "1fr 0.8fr 0.7fr 0.9fr 0.7fr 0.7fr 36px",
+                      display: "grid", gridTemplateColumns: "1fr 0.8fr 0.7fr 0.9fr 0.7fr 0.7fr 64px",
                       minWidth: 600, padding: "12px 18px", borderTop: "1px solid rgba(173,255,180,0.03)",
                       fontSize: 13, alignItems: "center", gap: 6,
                     }}>
@@ -1441,10 +1489,16 @@ function App() {
                       <div style={{ fontWeight: 700, color: C.accent }}>{fmt(r.amount)}</div>
                       <div style={{ color: C.accent2, fontSize: 12 }}>{fmt(r.agencyCut)}</div>
                       <div style={{ color: C.earn, fontSize: 12 }}>{fmt(r.chatterCut)}</div>
-                      <button className="no-print" onClick={() => persist({ ...data, records: data.records.filter((x) => x.id !== r.id) })} style={{
-                        background: "none", border: "none", color: "rgba(239,68,68,0.4)",
-                        cursor: "pointer", fontSize: 14, padding: 3, gridColumn: "7"
-                      }}>✖</button>
+                      <div className="no-print" style={{ display: "flex", gap: 2, gridColumn: "7", justifyContent: "flex-end" }}>
+                        <button onClick={() => setEditRecord(r)} aria-label="Edit sale" title="Edit" style={{
+                          background: "none", border: "none", color: "rgba(255,255,255,0.35)",
+                          cursor: "pointer", fontSize: 13, padding: 3, borderRadius: 5,
+                        }}>✎</button>
+                        <button onClick={() => deleteRecord(r)} aria-label="Delete sale" title="Delete" style={{
+                          background: "none", border: "none", color: "rgba(239,68,68,0.45)",
+                          cursor: "pointer", fontSize: 14, padding: 3, borderRadius: 5,
+                        }}>✖</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1557,6 +1611,66 @@ function App() {
 
       {shareCard && <ShareCard {...shareCard} onClose={() => setShareCard(null)} />}
       {invoiceView && <InvoiceView {...invoiceView} onClose={() => setInvoiceView(null)} />}
+
+      {/* Edit a single sale record */}
+      <Modal open={!!editRecord} onClose={() => setEditRecord(null)} title="Edit sale">
+        {editRecord && (
+          <div>
+            <p style={{ fontSize: 13, color: C.textDim, marginBottom: 16 }}>
+              {chatterNameFn(editRecord.chatterId)} · {clientNameFn(chatterClientFn(editRecord.chatterId))}
+            </p>
+            <div style={{ display: "flex", gap: 12 }}>
+              <Field label="Amount">
+                <input type="number" step="0.01" min="0" value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  aria-label="Sale amount" style={inpStyle} autoFocus />
+              </Field>
+              <Field label="Date">
+                <input type="date" value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  aria-label="Sale date" style={inpStyle} />
+              </Field>
+            </div>
+            {(() => {
+              const amt = parseFloat(editAmount);
+              const valid = !isNaN(amt) && amt > 0 && editDate;
+              const agRate = editRecord.amount ? editRecord.agencyCut / editRecord.amount : AGENCY_CUT;
+              const chRate = editRecord.amount ? editRecord.chatterCut / editRecord.amount : CHATTER_CUT;
+              return (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+                  <span style={{ fontSize: 11, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>
+                    {valid ? `You ${fmt(amt * agRate)} · Them ${fmt(amt * chRate)}` : "Enter an amount and date"}
+                  </span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn variant="secondary" onClick={() => setEditRecord(null)}>Cancel</Btn>
+                    <Btn disabled={!valid} onClick={updateRecord}>Save changes</Btn>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </Modal>
+
+      {/* Undo toast for deleted records */}
+      {lastDeleted && (
+        <div className="no-print" role="status" style={{
+          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          backgroundColor: "rgba(20,22,20,0.96)",
+          border: "1px solid " + C.accentBorder, borderRadius: 12, padding: "12px 16px",
+          display: "flex", alignItems: "center", gap: 16, zIndex: 1200,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.5)", animation: "slideUp 0.2s ease",
+        }}>
+          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>
+            Sale deleted ({fmt(lastDeleted.amount)})
+          </span>
+          <button onClick={undoDelete} style={{
+            background: C.accentDim, border: "1px solid " + C.accentBorder, color: C.accent,
+            borderRadius: 7, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700,
+            fontFamily: "'Outfit',sans-serif",
+          }}>Undo</button>
+        </div>
+      )}
 
       <Modal open={smartPasteOpen} onClose={() => setSmartPasteOpen(false)} title="✨ Smart Paste Sales">
         <p style={{ fontSize: 13, color: C.textDim, marginBottom: 12, lineHeight: 1.5 }}>
