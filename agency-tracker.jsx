@@ -351,6 +351,61 @@ function RevenueTrend({ records, delay = 0 }) {
   );
 }
 
+function SplitRing({ total, agency, chatter, delay = 0 }) {
+  const creator = Math.max(0, total - agency - chatter);
+  const sum = agency + chatter + creator || 1;
+  const r = 52, circ = 2 * Math.PI * r;
+  const segs = [
+    { key: "creator", label: "Creators kept", val: creator, color: "#FBBF24" },
+    { key: "chatter", label: "Chatters", val: chatter, color: "#A78BFA" },
+    { key: "agency", label: "Agency (you)", val: agency, color: "#34D399" },
+  ];
+  const [shown, setShown] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setShown(true), 120 + delay); return () => clearTimeout(t); }, [delay]);
+
+  let before = 0;
+  const arcs = segs.map((s) => {
+    const len = (s.val / sum) * circ;
+    const arc = { ...s, len, rot: (before / circ) * 360 - 90 };
+    before += len;
+    return arc;
+  });
+  const pct = (v) => (sum ? Math.round((v / sum) * 100) : 0);
+
+  return (
+    <div className="rise lift" style={{
+      background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 18, padding: "20px 22px",
+      marginBottom: 28, animationDelay: delay + "ms",
+      boxShadow: "0 18px 44px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.05)",
+    }}>
+      <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 1.4, textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace", marginBottom: 2 }}>Where the money goes</div>
+      <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 16 }}>Split of {fmt(total)} gross</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 26, flexWrap: "wrap" }}>
+        <svg width="128" height="128" viewBox="0 0 128 128" style={{ flex: "none" }} aria-label="Revenue split donut">
+          <circle cx="64" cy="64" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="15" />
+          {arcs.map((a, i) => (
+            <circle key={a.key} cx="64" cy="64" r={r} fill="none" stroke={a.color} strokeWidth="15" strokeLinecap="round"
+              transform={`rotate(${a.rot} 64 64)`}
+              strokeDasharray={`${a.len} ${circ - a.len}`}
+              strokeDashoffset={shown ? 0 : a.len}
+              style={{ transition: `stroke-dashoffset 0.9s cubic-bezier(.2,.8,.2,1) ${i * 0.12}s` }} />
+          ))}
+        </svg>
+        <div style={{ flex: "1 1 180px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {arcs.map((a) => (
+            <div key={a.key} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+              <span style={{ width: 9, height: 9, borderRadius: 3, background: a.color, flex: "none" }} />
+              <span style={{ color: C.textDim, flex: 1 }}>{a.label}</span>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", color: C.textMuted, fontSize: 12, marginRight: 8 }}>{pct(a.val)}%</span>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, color: a.color }}>{fmt(a.val)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Badge({ children }) {
   return (
     <span style={{
@@ -1111,6 +1166,10 @@ function App() {
         .btnp:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(94,234,212,0.42), inset 0 1px 0 rgba(255,255,255,0.5); filter: brightness(1.04); }
         .btnp:active:not(:disabled) { transform: translateY(0); }
         .btns:hover:not(:disabled) { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.85); }
+        .chrow { transition: background .2s ease, border-color .2s ease; }
+        .chrow:hover { background: rgba(94,234,212,0.05) !important; border-color: var(--accent-border) !important; }
+        .recrow { transition: background .18s ease; }
+        .recrow:hover { background: rgba(94,234,212,0.035) !important; }
         .glass { backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
         :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
         @media (prefers-reduced-motion: reduce) {
@@ -1252,6 +1311,8 @@ function App() {
             </div>
 
             <RevenueTrend records={data.records} delay={180} />
+
+            {totalSales > 0 && <SplitRing total={totalSales} agency={totalAgency} chatter={totalChatterPay} delay={220} />}
 
             <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-dim)", marginBottom: 14, letterSpacing: 0.5 }}>By Client</h3>
             {clientStats.length === 0 ? (
@@ -1550,10 +1611,10 @@ function App() {
               <EmptyState icon="📌" text="No clients yet" sub={'Click "Add Client" to get started'} />
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {data.clients.map((cl) => {
+                {data.clients.map((cl, i) => {
                   const ch = data.chatters.filter((c) => c.clientId === cl.id);
                   return (
-                    <div key={cl.id} style={{ background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, padding: "18px 20px" }}>
+                    <div key={cl.id} className="lift rise" style={{ background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 16, padding: "18px 20px", animationDelay: (i * 60) + "ms", boxShadow: "0 12px 30px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.04)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: ch.length ? 12 : 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
                           <Avatar name={cl.name} size={40} />
@@ -1579,7 +1640,7 @@ function App() {
                       {ch.length > 0 && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginLeft: 51 }}>
                           {ch.map((c) => (
-                            <div key={c.id} style={{
+                            <div key={c.id} className="chrow" style={{
                               display: "flex", justifyContent: "space-between", alignItems: "center",
                               padding: "8px 12px", background: "rgba(255,255,255,0.012)", borderRadius: 9,
                               border: "1px solid rgba(255,255,255,0.025)",
@@ -1679,9 +1740,9 @@ function App() {
                     <div style={{ fontSize: 10, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4, marginBottom: 3 }}>YOUR CUT</div>
                     <div style={{ fontSize: 18, fontWeight: 700, color: C.accent2 }}>{fmt(filteredRecords.reduce((s, r) => s + r.agencyCut, 0))}</div>
                   </div>
-                  <div style={{ background: "rgba(251,191,36,0.04)", borderRadius: 11, padding: "12px 18px", flex: "1 1 130px" }}>
+                  <div style={{ background: "rgba(167,139,250,0.06)", borderRadius: 11, padding: "12px 18px", flex: "1 1 130px" }}>
                     <div style={{ fontSize: 10, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4, marginBottom: 3 }}>CHATTER PAY</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: C.earn }}>{fmt(filteredRecords.reduce((s, r) => s + r.chatterCut, 0))}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: C.violet }}>{fmt(filteredRecords.reduce((s, r) => s + r.chatterCut, 0))}</div>
                   </div>
                 </div>
               )}
@@ -1699,7 +1760,7 @@ function App() {
                     <div>Chatter</div><div>Client</div><div>Date</div><div>Amount</div><div>You</div><div>Them</div><div>Actions</div>
                   </div>
                   {filteredRecords.map((r) => (
-                    <div key={r.id} style={{
+                    <div key={r.id} className="recrow" style={{
                       display: "grid", gridTemplateColumns: "1fr 0.8fr 0.7fr 0.9fr 0.7fr 0.7fr 64px",
                       minWidth: 600, padding: "12px 18px", borderTop: "1px solid rgba(94,234,212,0.03)",
                       fontSize: 13, alignItems: "center", gap: 6,
