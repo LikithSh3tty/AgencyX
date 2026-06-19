@@ -28,6 +28,16 @@ const fmt = (n) => {
   }
 };
 
+// ── Money in integer cents ──────────────────────────────────────────
+// All money math goes through cents to avoid floating-point drift (e.g. 0.1 + 0.2).
+// Storage stays in dollars for back-compat; we convert at the arithmetic boundaries.
+const toCents = (dollars) => Math.round(((Number(dollars) || 0) + Number.EPSILON) * 100);
+const fromCents = (c) => (Number(c) || 0) / 100;
+// Round a dollar amount to whole cents.
+const money = (dollars) => fromCents(toCents(dollars));
+// Sum an array of dollar values exactly (accumulate in integer cents).
+const sumMoney = (arr, fn = (x) => x) => fromCents(arr.reduce((c, x) => c + toCents(fn(x)), 0));
+
 function useCountUp(target, duration = 1000) {
   const [val, setVal] = useState(0);
   const fromRef = useRef(0);
@@ -112,18 +122,19 @@ const defaultConfig = {
 const computeShare = (part, amount, hours = 0) => {
   if (!part) return 0;
   const amt = Number(amount) || 0, hrs = Number(hours) || 0;
+  let raw;
   switch (part.model) {
-    case "flat": return Math.max(0, Number(part.amount) || 0);
-    case "hourly": return Math.max(0, hrs * (Number(part.rate) || 0));
+    case "flat": raw = Math.max(0, Number(part.amount) || 0); break;
+    case "hourly": raw = Math.max(0, hrs * (Number(part.rate) || 0)); break;
     case "tiered": {
       const tiers = (part.tiers || []).slice().sort((a, b) => (a.upTo == null ? Infinity : a.upTo) - (b.upTo == null ? Infinity : b.upTo));
-      for (const tr of tiers) if (tr.upTo == null || amt <= Number(tr.upTo)) return amt * (Number(tr.rate) || 0);
-      const last = tiers[tiers.length - 1];
-      return amt * (Number(last && last.rate) || 0);
+      raw = amt * (Number((tiers.find((tr) => tr.upTo == null || amt <= Number(tr.upTo)) || tiers[tiers.length - 1] || {}).rate) || 0);
+      break;
     }
     case "percent":
-    default: return amt * (Number(part.rate) || 0);
+    default: raw = amt * (Number(part.rate) || 0); break;
   }
+  return money(raw);
 };
 
 // Normalize a client to a commission object (back-compat with legacy agencyCut/chatterCut).
@@ -684,7 +695,7 @@ function TabBar({ active, onChange }) {
 function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
   const { business, terms } = useConfig();
   const isSingle = list.length === 1;
-  const totalCut = list.reduce((s, c) => s + c.chatterCut, 0);
+  const totalCut = sumMoney(list, (c) => c.chatterCut);
   const singlePercent = list[0]?.chatterCutPercent !== undefined ? (list[0].chatterCutPercent * 100).toFixed(1) + "%" : "";
   const uniquePercents = [...new Set(list.map((c) => c.chatterCutPercent))].filter((p) => p !== undefined);
   const displayPercentStr = uniquePercents.length === 1 ? ` (${(uniquePercents[0] * 100).toFixed(1)}%)` : "";
@@ -785,10 +796,10 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
   const due = new Date(record.date + "T00:00:00");
   due.setDate(due.getDate() + (invoice.dueDays || 0));
   const dueStr = due.toLocaleDateString(locale.locale || "en-GB");
-  const invAmount = customAmount ?? (() => { const s = computeShares(client, record.amount, record.hours || 0); return s.agencyShare + s.staffShare; })();
+  const invAmount = money(customAmount ?? (() => { const s = computeShares(client, record.amount, record.hours || 0); return s.agencyShare + s.staffShare; })());
   const taxRate = Number(locale.taxRate) || 0;
-  const tax = invAmount * taxRate;
-  const total = invAmount + tax;
+  const tax = money(invAmount * taxRate);
+  const total = money(invAmount + tax);
 
   useEffect(() => {
     if (isPrinting) {
@@ -1390,7 +1401,7 @@ function App() {
     const { agencyShare, staffShare } = computeShares(client, amt, editRecord.hours || 0);
     const records = data.records.map((r) =>
       r.id === editRecord.id
-        ? { ...r, amount: amt, date: editDate, agencyCut: agencyShare, chatterCut: staffShare }
+        ? { ...r, amount: money(amt), date: editDate, agencyCut: agencyShare, chatterCut: staffShare }
         : r
     );
     persist({ ...data, records });
@@ -1460,7 +1471,7 @@ function App() {
   };
 
   const getVals = (cid) => bulkAmounts[cid] || [""];
-  const chatterSum = (cid, arr) => (arr || getVals(cid)).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  const chatterSum = (cid, arr) => sumMoney(arr || getVals(cid), (v) => parseFloat(v) || 0);
 
   const handleKeyDown = (e, cid, idx) => {
     if (e.key === "Enter") {
@@ -1487,7 +1498,7 @@ function App() {
           const client = data.clients.find((cl) => cl.id === (chatter?.clientId));
           const hours = Number((bulkHours[cid] || [])[0]) || 0;
           const { agencyShare, staffShare } = computeShares(client, num, hours);
-          const rec = { id: genId(), chatterId: cid, amount: num, date: salesDate, agencyCut: agencyShare, chatterCut: staffShare };
+          const rec = { id: genId(), chatterId: cid, amount: money(num), date: salesDate, agencyCut: agencyShare, chatterCut: staffShare };
           if (hours) rec.hours = hours;
           newRecs.push(rec);
         }
@@ -1670,9 +1681,10 @@ function App() {
   const printReport = () => { printElement("history-printable", "Sales_History_" + today()); };
 
   const salesChatters = data.chatters.filter((c) => salesClientId === "all" || c.clientId === salesClientId);
-  const totalSales = data.records.filter((r) => dashFilterDate === "all" || r.date === dashFilterDate).reduce((s, r) => s + r.amount, 0);
-  const totalAgency = data.records.filter((r) => dashFilterDate === "all" || r.date === dashFilterDate).reduce((s, r) => s + r.agencyCut, 0);
-  const totalChatterPay = data.records.filter((r) => dashFilterDate === "all" || r.date === dashFilterDate).reduce((s, r) => s + r.chatterCut, 0);
+  const dashRecs = data.records.filter((r) => dashFilterDate === "all" || r.date === dashFilterDate);
+  const totalSales = sumMoney(dashRecs, (r) => r.amount);
+  const totalAgency = sumMoney(dashRecs, (r) => r.agencyCut);
+  const totalChatterPay = sumMoney(dashRecs, (r) => r.chatterCut);
 
   const sym = config.locale.currencySymbol || "$";
   const agLabelsSet = [...new Set(data.clients.map((cl) => partLabel(clientCommission(cl).agency, sym)))];
@@ -1682,34 +1694,34 @@ function App() {
 
   const clientStats = data.clients.map((cl) => {
     const recs = data.records.filter((r) => (dashFilterDate === "all" || r.date === dashFilterDate) && data.chatters.find((c) => c.id === r.chatterId)?.clientId === cl.id);
-    return { id: cl.id, name: cl.name, agencyCut: cl.agencyCut, chatterCut: cl.chatterCut, total: recs.reduce((s, r) => s + r.amount, 0), agency: recs.reduce((s, r) => s + r.agencyCut, 0), chatterPay: recs.reduce((s, r) => s + r.chatterCut, 0), chatterCount: data.chatters.filter((c) => c.clientId === cl.id).length };
+    return { id: cl.id, name: cl.name, agencyCut: cl.agencyCut, chatterCut: cl.chatterCut, total: sumMoney(recs, (r) => r.amount), agency: sumMoney(recs, (r) => r.agencyCut), chatterPay: sumMoney(recs, (r) => r.chatterCut), chatterCount: data.chatters.filter((c) => c.clientId === cl.id).length };
   });
 
   const chatterStats = data.chatters.map((ch) => {
     const recs = data.records.filter((r) => (dashFilterDate === "all" || r.date === dashFilterDate) && r.chatterId === ch.id);
-    return { id: ch.id, name: ch.name, clientId: ch.clientId, total: recs.reduce((s, r) => s + r.amount, 0), agency: recs.reduce((s, r) => s + r.agencyCut, 0), chatterPay: recs.reduce((s, r) => s + r.chatterCut, 0), count: recs.length };
+    return { id: ch.id, name: ch.name, clientId: ch.clientId, total: sumMoney(recs, (r) => r.amount), agency: sumMoney(recs, (r) => r.agencyCut), chatterPay: sumMoney(recs, (r) => r.chatterCut), count: recs.length };
   });
 
   const clientNameFn = (id) => data.clients.find((c) => c.id === id)?.name || "Unknown";
   const chatterNameFn = (id) => data.chatters.find((c) => c.id === id)?.name || "Unknown";
   const chatterClientFn = (id) => data.chatters.find((c) => c.id === id)?.clientId;
 
-  const bulkTotal = Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => acc + chatterSum(cid, vals), 0);
+  const bulkTotal = fromCents(Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => acc + toCents(chatterSum(cid, vals)), 0));
   const bulkHas = bulkTotal > 0;
 
-  const bulkAgencyTotal = Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
+  const bulkAgencyTotal = fromCents(Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
     const chatter = data.chatters.find((c) => c.id === cid);
     const client = data.clients.find((cl) => cl.id === chatter?.clientId);
     const hrs = Number((bulkHours[cid] || [])[0]) || 0;
-    return acc + computeShares(client, chatterSum(cid, vals), hrs).agencyShare;
-  }, 0);
+    return acc + toCents(computeShares(client, chatterSum(cid, vals), hrs).agencyShare);
+  }, 0));
 
-  const bulkChatterTotal = Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
+  const bulkChatterTotal = fromCents(Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
     const chatter = data.chatters.find((c) => c.id === cid);
     const client = data.clients.find((cl) => cl.id === chatter?.clientId);
     const hrs = Number((bulkHours[cid] || [])[0]) || 0;
-    return acc + computeShares(client, chatterSum(cid, vals), hrs).staffShare;
-  }, 0);
+    return acc + toCents(computeShares(client, chatterSum(cid, vals), hrs).staffShare);
+  }, 0));
 
   const batchCuts = salesChatters.filter((c) => chatterSum(c.id) > 0).map((c) => {
     const cl = data.clients.find((x) => x.id === c.clientId);
@@ -2397,15 +2409,15 @@ function App() {
                 <div className="mobile-grid" style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
                   <div style={{ background: C.accentDim, borderRadius: 11, padding: "12px 18px", flex: "1 1 130px" }}>
                     <div style={{ fontSize: 10, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4, marginBottom: 3 }}>TOTAL</div>
-                    <div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(filteredRecords.reduce((s, r) => s + r.amount, 0))}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(sumMoney(filteredRecords, (r) => r.amount))}</div>
                   </div>
                   <div style={{ background: "rgba(var(--accent-rgb),0.04)", borderRadius: 11, padding: "12px 18px", flex: "1 1 130px" }}>
                     <div style={{ fontSize: 10, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4, marginBottom: 3 }}>YOUR CUT</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: C.accent2 }}>{fmt(filteredRecords.reduce((s, r) => s + r.agencyCut, 0))}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: C.accent2 }}>{fmt(sumMoney(filteredRecords, (r) => r.agencyCut))}</div>
                   </div>
                   <div style={{ background: "rgba(167,139,250,0.06)", borderRadius: 11, padding: "12px 18px", flex: "1 1 130px" }}>
                     <div style={{ fontSize: 10, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4, marginBottom: 3 }}>{t.staffShareLabel.toUpperCase()}</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: C.violet }}>{fmt(filteredRecords.reduce((s, r) => s + r.chatterCut, 0))}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: C.violet }}>{fmt(sumMoney(filteredRecords, (r) => r.chatterCut))}</div>
                   </div>
                 </div>
               )}
