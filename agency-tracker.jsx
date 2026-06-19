@@ -71,9 +71,9 @@ const defaultConfig = {
   business: {
     name: "AgencyX",
     tagline: "Agency Dashboard",
-    logo: "/logo.svg",
-    address: ["Ghansoli", "Navi Mumbai", "Vashi 400703", "Maharashtra MH", "India"],
-    country: "India",
+    logo: "",
+    address: [],
+    country: "",
   },
   locale: {
     locale: "en-US",
@@ -83,7 +83,7 @@ const defaultConfig = {
     currencyWords: { major: "Dollars", minor: "Cents" },
     taxRate: 0,
     taxLabel: "Tax",
-    taxLine: "Place of supply: Maharashtra",
+    taxLine: "",
   },
   terms: {
     client: { one: "Client", many: "Clients" },
@@ -788,9 +788,33 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
   );
 }
 
-function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDonePrinting }) {
+function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDonePrinting, onOpenSettings }) {
   const { business, locale, invoice } = useConfig();
   if (!record || !client) return null;
+
+  // An invoice needs the agency's own details. If they're missing, prompt to fill them
+  // instead of generating a blank/unprofessional document.
+  const missing = [];
+  if (!business.name || !business.name.trim()) missing.push("business name");
+  if (!(business.address && business.address.filter((l) => l && l.trim()).length)) missing.push("business address");
+  if (missing.length) {
+    return (
+      <Modal open={true} onClose={onClose} title="Invoice Preview">
+        <div style={{ textAlign: "center", padding: "26px 18px 10px" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🧾</div>
+          <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Add your invoice details first</h3>
+          <p style={{ fontSize: 13.5, color: C.textDim, lineHeight: 1.5, maxWidth: 380, margin: "0 auto 4px" }}>
+            Your invoices are missing your {missing.join(" and ")}. Add them in Settings so the invoices you send look complete and professional.
+          </p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 22 }}>
+            <Btn variant="secondary" onClick={onClose}>Not now</Btn>
+            <Btn onClick={() => { onClose?.(); onOpenSettings?.(); }}>Add details in Settings →</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
   const invNo = invoiceNumber(record, invoice);
   const dateStr = new Date(record.date + "T00:00:00").toLocaleDateString(locale.locale || "en-GB");
   const due = new Date(record.date + "T00:00:00");
@@ -2560,7 +2584,7 @@ function App() {
 
       {settingsOpen && <SettingsPanel initial={config} onClose={() => setSettingsOpen(false)} onSave={saveConfig} />}
 
-      {invoiceView && <InvoiceView {...invoiceView} onClose={() => setInvoiceView(null)} />}
+      {invoiceView && <InvoiceView {...invoiceView} onClose={() => setInvoiceView(null)} onOpenSettings={() => setSettingsOpen(true)} />}
 
       {/* Edit a single sale record */}
       <Modal open={!!editRecord} onClose={() => setEditRecord(null)} title="Edit sale">
