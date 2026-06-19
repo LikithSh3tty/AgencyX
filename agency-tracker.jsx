@@ -103,7 +103,59 @@ const defaultConfig = {
   onboarded: false,
 };
 
-// First-run presets: pick one and the app pre-fills wording + default commission.
+// ── Commission engine ──────────────────────────────────────────────
+// A "part" describes how one side (agency or staff) is paid per revenue record:
+//   { model:"percent", rate:0.075 }              -> share = amount * rate
+//   { model:"flat",    amount:200 }              -> share = fixed amount per record
+//   { model:"tiered",  tiers:[{upTo,rate}, ...] } -> share = amount * rate of matching bracket
+//   { model:"hourly",  rate:50 }                 -> share = hours * rate
+const computeShare = (part, amount, hours = 0) => {
+  if (!part) return 0;
+  const amt = Number(amount) || 0, hrs = Number(hours) || 0;
+  switch (part.model) {
+    case "flat": return Math.max(0, Number(part.amount) || 0);
+    case "hourly": return Math.max(0, hrs * (Number(part.rate) || 0));
+    case "tiered": {
+      const tiers = (part.tiers || []).slice().sort((a, b) => (a.upTo == null ? Infinity : a.upTo) - (b.upTo == null ? Infinity : b.upTo));
+      for (const tr of tiers) if (tr.upTo == null || amt <= Number(tr.upTo)) return amt * (Number(tr.rate) || 0);
+      const last = tiers[tiers.length - 1];
+      return amt * (Number(last && last.rate) || 0);
+    }
+    case "percent":
+    default: return amt * (Number(part.rate) || 0);
+  }
+};
+
+// Normalize a client to a commission object (back-compat with legacy agencyCut/chatterCut).
+const clientCommission = (client) => {
+  if (client && client.commission && client.commission.agency && client.commission.staff) return client.commission;
+  return {
+    agency: { model: "percent", rate: (client && client.agencyCut != null) ? client.agencyCut : AGENCY_CUT },
+    staff: { model: "percent", rate: (client && client.chatterCut != null) ? client.chatterCut : CHATTER_CUT },
+  };
+};
+
+const computeShares = (client, amount, hours = 0) => {
+  const c = clientCommission(client);
+  return { agencyShare: computeShare(c.agency, amount, hours), staffShare: computeShare(c.staff, amount, hours) };
+};
+
+// True if any side of a client's commission is hourly (so a record needs an hours input).
+const clientUsesHours = (client) => {
+  const c = clientCommission(client);
+  return c.agency.model === "hourly" || c.staff.model === "hourly";
+};
+
+// Short human label for a commission part, e.g. "7.5%", "$200 flat", "$50/hr", "tiered".
+const partLabel = (part, symbol = "$") => {
+  if (!part) return "";
+  switch (part.model) {
+    case "flat": return `${symbol}${Number(part.amount) || 0} flat`;
+    case "hourly": return `${symbol}${Number(part.rate) || 0}/hr`;
+    case "tiered": return "tiered";
+    default: return `${((Number(part.rate) || 0) * 100).toFixed(1).replace(/\.0$/, "")}%`;
+  }
+};
 const AGENCY_PRESETS = {
   chatting: {
     label: "Chatting agency", icon: "💬", tagline: "Chatting Agency",
@@ -722,7 +774,7 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
   const due = new Date(record.date + "T00:00:00");
   due.setDate(due.getDate() + (invoice.dueDays || 0));
   const dueStr = due.toLocaleDateString(locale.locale || "en-GB");
-  const invAmount = customAmount ?? (record.amount * ((client.agencyCut || AGENCY_CUT) + (client.chatterCut || CHATTER_CUT)));
+  const invAmount = customAmount ?? (() => { const s = computeShares(client, record.amount, record.hours || 0); return s.agencyShare + s.staffShare; })();
   const taxRate = Number(locale.taxRate) || 0;
   const tax = invAmount * taxRate;
   const total = invAmount + tax;
@@ -1121,6 +1173,7 @@ function App() {
   const [salesClientId, setSalesClientId] = useState("");
   const [salesDate, setSalesDate] = useState(today());
   const [bulkAmounts, setBulkAmounts] = useState({});
+  const [bulkHours, setBulkHours] = useState({});
   const [savedFlash, setSavedFlash] = useState(false);
 
   // Modals
@@ -1225,12 +1278,13 @@ function App() {
     if (!editRecord) return;
     const amt = parseFloat(editAmount);
     if (isNaN(amt) || amt <= 0 || !editDate) return;
-    // Preserve the cut rates the record was originally booked at.
-    const agRate = editRecord.amount ? editRecord.agencyCut / editRecord.amount : AGENCY_CUT;
-    const chRate = editRecord.amount ? editRecord.chatterCut / editRecord.amount : CHATTER_CUT;
+    // Recompute shares from the client's commission (handles %, flat, tiered, hourly).
+    const chatter = data.chatters.find((c) => c.id === editRecord.chatterId);
+    const client = data.clients.find((cl) => cl.id === (chatter && chatter.clientId));
+    const { agencyShare, staffShare } = computeShares(client, amt, editRecord.hours || 0);
     const records = data.records.map((r) =>
       r.id === editRecord.id
-        ? { ...r, amount: amt, date: editDate, agencyCut: amt * agRate, chatterCut: amt * chRate }
+        ? { ...r, amount: amt, date: editDate, agencyCut: agencyShare, chatterCut: staffShare }
         : r
     );
     persist({ ...data, records });
@@ -1317,13 +1371,15 @@ function App() {
         if (num > 0) {
           const chatter = data.chatters.find((c) => c.id === cid);
           const client = data.clients.find((cl) => cl.id === (chatter?.clientId));
-          const agCut = client?.agencyCut || AGENCY_CUT;
-          const chCut = client?.chatterCut || CHATTER_CUT;
-          newRecs.push({ id: genId(), chatterId: cid, amount: num, date: salesDate, agencyCut: num * agCut, chatterCut: num * chCut });
+          const hours = Number((bulkHours[cid] || [])[0]) || 0;
+          const { agencyShare, staffShare } = computeShares(client, num, hours);
+          const rec = { id: genId(), chatterId: cid, amount: num, date: salesDate, agencyCut: agencyShare, chatterCut: staffShare };
+          if (hours) rec.hours = hours;
+          newRecs.push(rec);
         }
       });
     });
-    if (newRecs.length) { persist({ ...data, records: [...data.records, ...newRecs] }); setBulkAmounts({}); setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2500); }
+    if (newRecs.length) { persist({ ...data, records: [...data.records, ...newRecs] }); setBulkAmounts({}); setBulkHours({}); setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2500); }
   };
 
   const parseSales = () => {
