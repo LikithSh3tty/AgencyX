@@ -8,7 +8,25 @@ const genId = () =>
     ? crypto.randomUUID()
     : Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 const today = () => new Date().toISOString().slice(0, 10);
-const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+// Active currency — kept in sync with config.locale by <App>. Single tenant per browser,
+// so a module-level value lets fmt()/toWords() stay config-driven without threading props.
+let activeCurrency = { locale: "en-US", currency: "USD", symbol: "$", words: { major: "Dollars", minor: "Cents" } };
+const setActiveCurrency = (loc) => {
+  activeCurrency = {
+    locale: loc.locale || "en-US",
+    currency: loc.currency || "USD",
+    symbol: loc.currencySymbol || "$",
+    words: loc.currencyWords || { major: "Dollars", minor: "Cents" },
+  };
+};
+const fmt = (n) => {
+  const v = Number(n) || 0;
+  try {
+    return new Intl.NumberFormat(activeCurrency.locale, { style: "currency", currency: activeCurrency.currency }).format(v);
+  } catch {
+    return activeCurrency.symbol + v.toFixed(2);
+  }
+};
 
 function useCountUp(target, duration = 1000) {
   const [val, setVal] = useState(0);
@@ -112,8 +130,8 @@ const toWords = (num) => {
   };
   const main = Math.floor(num);
   const cents = Math.round((num - main) * 100);
-  let str = convert(main) + " Dollars";
-  if (cents > 0) str += " And " + convert(cents) + " Cents";
+  let str = convert(main) + " " + activeCurrency.words.major;
+  if (cents > 0) str += " And " + convert(cents) + " " + activeCurrency.words.minor;
   return str;
 };
 
@@ -732,6 +750,7 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
 function App() {
   const [data, setData] = useState(defaultState);
   const config = data.config || defaultConfig;
+  setActiveCurrency(config.locale);
 
   // Reflect the agency name in the browser tab.
   useEffect(() => {
@@ -2077,7 +2096,7 @@ function App() {
                     </span>
                   )}
                   <div style={{ position: "relative" }}>
-                    <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textMuted, fontSize: 12 }}>$</span>
+                    <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textMuted, fontSize: 12 }}>{config.locale.currencySymbol}</span>
                     <input type="number" step="0.01" min="0" value={it.amount}
                       onChange={(e) => setReviewAmount(it.id, e.target.value)}
                       disabled={!it.included}

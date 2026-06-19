@@ -61,7 +61,7 @@ errors with a missing rollup module, run `npm install @rollup/rollup-linux-x64-g
 - [x] Step 1 — Hardcoding audit → see AUDIT.md (checklist of everything agency-specific).
 - [x] Step 2 — Config schema + safe defaults (defaults = current values, no visible change).
 - [x] Step 3 — Wire config through app via context (plumbing, no visible change).
-- [ ] Step 4 — Locale-aware currency + amount-in-words.
+- [x] Step 4 — Locale-aware currency + amount-in-words.
 - [ ] Step 5 — Terminology pass (config-driven labels; keep internal keys).
 - [ ] Step 6 — Branding pass (name/logo/accent from config).
 - [ ] Step 7 — De-hardcode invoice (address, tax line, number format, notes).
