@@ -59,8 +59,8 @@ const CHATTER_CUT = 0.125;
    so adding this changes nothing visible. Later steps make the UI read from it. ── */
 const defaultConfig = {
   business: {
-    name: "Fanlink Chatting",
-    tagline: "Chatting Agency",
+    name: "AgencyX",
+    tagline: "Agency Dashboard",
     logo: "/logo.svg",
     address: ["Ghansoli", "Navi Mumbai", "Vashi 400703", "Maharashtra MH", "India"],
     country: "India",
@@ -1608,10 +1608,11 @@ function App() {
   };
 
   const exportBackup = () => {
-    const payload = JSON.stringify({ _app: "fanlink-tracker", _version: 5, _exportedAt: new Date().toISOString(), ...data }, null, 2);
+    const payload = JSON.stringify({ _app: "agencyx-tracker", _version: 5, _exportedAt: new Date().toISOString(), ...data }, null, 2);
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `fanlink-backup-${today()}.json`; a.click();
+    const slug = (config.business.name || "agencyx").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "agencyx";
+    const a = document.createElement("a"); a.href = url; a.download = `${slug}-backup-${today()}.json`; a.click();
     URL.revokeObjectURL(url);
   };
 
