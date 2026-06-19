@@ -89,7 +89,8 @@ const defaultConfig = {
   },
   invoice: {
     title: "Customer Invoices",
-    numberPrefix: "INV/25-26/",
+    numberFormat: "INV/{FY}/{SEQ}",
+    fiscalYearStartMonth: 4,
     lineItemLabel: "Agency Fees",
     notes: "Please make the payment within 7 days.",
     signatory: "Authorized Signatory",
@@ -119,6 +120,28 @@ const mergeConfig = (saved) => {
 const ConfigContext = createContext(defaultConfig);
 const useConfig = () => useContext(ConfigContext);
 const LOGO = "/logo.svg";
+
+// Fiscal-year label for a date, given the FY start month (e.g. 4 = April -> "26-27").
+const fiscalYear = (dateStr, startMonth = 1) => {
+  const d = new Date((dateStr || today()) + "T00:00:00");
+  const m = d.getMonth() + 1, y = d.getFullYear();
+  const start = m >= startMonth ? y : y - 1;
+  const pad = (n) => String(n % 100).padStart(2, "0");
+  return `${pad(start)}-${pad(start + 1)}`;
+};
+
+// Expand an invoice-number template using a record + invoice config.
+const invoiceNumber = (record, inv) => {
+  if (record.invoiceNo) return record.invoiceNo;
+  const d = new Date((record.date || today()) + "T00:00:00");
+  const seq = (record.id || "").replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "0001";
+  return (inv.numberFormat || "INV/{FY}/{SEQ}")
+    .replace(/\{FY\}/g, fiscalYear(record.date, inv.fiscalYearStartMonth || 1))
+    .replace(/\{YYYY\}/g, String(d.getFullYear()))
+    .replace(/\{YY\}/g, String(d.getFullYear() % 100).padStart(2, "0"))
+    .replace(/\{MM\}/g, String(d.getMonth() + 1).padStart(2, "0"))
+    .replace(/\{SEQ\}/g, seq);
+};
 
 // "#5EEAD4" -> "94, 234, 212"  (for rgba(var(--accent-rgb), a) glows)
 const hexToRgb = (hex) => {
@@ -562,6 +585,7 @@ function TabBar({ active, onChange }) {
 
 /* ── Share Card ── */
 function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
+  const { business, terms } = useConfig();
   const isSingle = list.length === 1;
   const totalCut = list.reduce((s, c) => s + c.chatterCut, 0);
   const singlePercent = list[0]?.chatterCutPercent !== undefined ? (list[0].chatterCutPercent * 100).toFixed(1) + "%" : "12.5%";
@@ -571,7 +595,7 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
   return (
     <Modal open={true} onClose={onClose} title="Share Earnings">
       <div style={{
-        background: "linear-gradient(160deg,#0d1a10,#0a1a0d 40%,#0f2213)",
+        background: "linear-gradient(160deg, var(--surface), var(--surface2))",
         borderRadius: 18, padding: "26px 28px", marginBottom: 18,
         border: "1px solid rgba(var(--accent-rgb),0.12)", position: "relative", overflow: "hidden",
       }}>
@@ -585,12 +609,20 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
         }} />
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-          <img src={LOGO} alt="Fanlink" style={{
-            width: 32, height: 32, borderRadius: 9, objectFit: "contain",
-            background: "rgba(0,0,0,0.15)",
-          }} />
+          {business.logo ? (
+            <img src={business.logo} alt={business.name} style={{
+              width: 32, height: 32, borderRadius: 9, objectFit: "contain",
+              background: "rgba(0,0,0,0.15)",
+            }} />
+          ) : (
+            <div style={{
+              width: 32, height: 32, borderRadius: 9, display: "grid", placeItems: "center",
+              background: "linear-gradient(145deg, var(--accent), var(--accent2))", color: "#04231b",
+              fontWeight: 800, fontSize: 17,
+            }}>{(business.name || "?").charAt(0).toUpperCase()}</div>
+          )}
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>Fanlink Chatting</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{business.name}</div>
             <div style={{ fontSize: 10, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.8 }}>EARNINGS REPORT</div>
           </div>
           <div style={{ marginLeft: "auto", fontSize: 11, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>{date}</div>
@@ -599,7 +631,7 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
         {isSingle ? (
           <div>
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 4 }}>Chatter</div>
+              <div style={{ fontSize: 11, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 4 }}>{terms.staff.one}</div>
               <div style={{ fontSize: 20, fontWeight: 700, color: "#fff" }}>{list[0].name}</div>
               <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{clientNameStr}</div>
             </div>
@@ -614,7 +646,7 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
         ) : (
           <div>
             <div style={{ fontSize: 11, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>
-              {clientNameStr || "All Clients"} — Chatter Earnings{displayPercentStr}
+              {clientNameStr || `All ${terms.client.many}`} — {terms.staff.one} Earnings{displayPercentStr}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
               {list.filter((c) => c.chatterCut > 0).map((c, i) => (
@@ -649,10 +681,17 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
 }
 
 function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDonePrinting }) {
+  const { business, locale, invoice } = useConfig();
   if (!record || !client) return null;
-  const invNo = record.invoiceNo || "INV/25-26/" + record.id.slice(0, 4).toUpperCase();
-  const dateStr = new Date(record.date + "T00:00:00").toLocaleDateString("en-GB");
+  const invNo = invoiceNumber(record, invoice);
+  const dateStr = new Date(record.date + "T00:00:00").toLocaleDateString(locale.locale || "en-GB");
+  const due = new Date(record.date + "T00:00:00");
+  due.setDate(due.getDate() + (invoice.dueDays || 0));
+  const dueStr = due.toLocaleDateString(locale.locale || "en-GB");
   const invAmount = customAmount ?? (record.amount * ((client.agencyCut || AGENCY_CUT) + (client.chatterCut || CHATTER_CUT)));
+  const taxRate = Number(locale.taxRate) || 0;
+  const tax = invAmount * taxRate;
+  const total = invAmount + tax;
 
   useEffect(() => {
     if (isPrinting) {
@@ -672,23 +711,21 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 40 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <img src={LOGO} alt="Fanlink Logo" style={{ width: 60, height: 60, marginBottom: 10, objectFit: "contain" }} />
-            <div style={{ fontSize: 16, fontWeight: 700 }}>Fanlink Chatting</div>
-            <div style={{ fontSize: 13, color: "#444" }}>Ghansoli</div>
-            <div style={{ fontSize: 13, color: "#444" }}>Navi Mumbai</div>
-            <div style={{ fontSize: 13, color: "#444" }}>Vashi 400703</div>
-            <div style={{ fontSize: 13, color: "#444" }}>Maharashtra MH</div>
-            <div style={{ fontSize: 13, color: "#444" }}>India</div>
+            {business.logo && <img src={business.logo} alt={business.name} style={{ width: 60, height: 60, marginBottom: 10, objectFit: "contain" }} />}
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{business.name}</div>
+            {(business.address || []).map((line, i) => (
+              <div key={i} style={{ fontSize: 13, color: "#444" }}>{line}</div>
+            ))}
           </div>
           <div style={{ textAlign: "right", alignSelf: "flex-end" }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>{client.name}</div>
-            <div style={{ fontSize: 13, color: "#444", marginTop: 8 }}>Place of supply: Maharashtra</div>
+            {locale.taxLine && <div style={{ fontSize: 13, color: "#444", marginTop: 8 }}>{locale.taxLine}</div>}
           </div>
         </div>
 
         {/* Invoice Info */}
         <div style={{ marginBottom: 30 }}>
-          <h1 style={{ fontSize: 24, color: "#aaa", fontWeight: 400, marginBottom: 20 }}>Customer Invoices {invNo}</h1>
+          <h1 style={{ fontSize: 24, color: "#aaa", fontWeight: 400, marginBottom: 20 }}>{invoice.title} {invNo}</h1>
           <div style={{ display: "flex", gap: 60 }}>
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Invoice Date</div>
@@ -696,7 +733,7 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Due Date</div>
-              <div style={{ fontSize: 13 }}>{dateStr}</div>
+              <div style={{ fontSize: 13 }}>{dueStr}</div>
             </div>
           </div>
         </div>
@@ -711,7 +748,7 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
           </div>
           <div style={{ display: "flex", padding: "12px 0", fontSize: 13, borderBottom: "1px solid #eee" }}>
             <div style={{ flex: 2 }}>
-              <div style={{ fontWeight: 600 }}>Agency Fees - ${client.name}</div>
+              <div style={{ fontWeight: 600 }}>{invoice.lineItemLabel} - {client.name}</div>
             </div>
             <div style={{ flex: 1, textAlign: "right" }}>1.00</div>
             <div style={{ flex: 1, textAlign: "right" }}>{fmt(invAmount)}</div>
@@ -726,29 +763,37 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
               <span>Untaxed Amount</span>
               <span>{fmt(invAmount)}</span>
             </div>
+            {taxRate > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+                <span>{locale.taxLabel || "Tax"} ({(taxRate * 100).toFixed(taxRate * 100 % 1 ? 1 : 0)}%)</span>
+                <span>{fmt(tax)}</span>
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13, borderTop: "1px solid #000", paddingTop: 8 }}>
               <span>Total</span>
-              <span>{fmt(invAmount)}</span>
+              <span>{fmt(total)}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 14 }}>
               <span>Amount Due</span>
-              <span>{fmt(invAmount)}</span>
+              <span>{fmt(total)}</span>
             </div>
           </div>
         </div>
 
         {/* Bottom Text */}
         <div style={{ marginTop: 60 }}>
-          <div style={{ fontSize: 12, fontStyle: "italic", marginBottom: 20 }}>
-            {toWords(invAmount)}
-          </div>
+          {locale.amountInWords !== false && (
+            <div style={{ fontSize: 12, fontStyle: "italic", marginBottom: 20 }}>
+              {toWords(total)}
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
             <div style={{ fontSize: 12, color: "#444" }}>
-              Notes: Please make the payment within 7 days.
+              {invoice.notes ? "Notes: " + invoice.notes : ""}
             </div>
             <div style={{ textAlign: "center" }}>
               <div style={{ width: "150px", borderBottom: "1px solid #000", marginBottom: 8 }}></div>
-              <div style={{ fontSize: 12, fontWeight: 600 }}>Authorized Signatory</div>
+              <div style={{ fontSize: 12, fontWeight: 600 }}>{invoice.signatory}</div>
             </div>
           </div>
         </div>
