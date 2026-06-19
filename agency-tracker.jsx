@@ -674,7 +674,7 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
   const { business, terms } = useConfig();
   const isSingle = list.length === 1;
   const totalCut = list.reduce((s, c) => s + c.chatterCut, 0);
-  const singlePercent = list[0]?.chatterCutPercent !== undefined ? (list[0].chatterCutPercent * 100).toFixed(1) + "%" : "12.5%";
+  const singlePercent = list[0]?.chatterCutPercent !== undefined ? (list[0].chatterCutPercent * 100).toFixed(1) + "%" : "";
   const uniquePercents = [...new Set(list.map((c) => c.chatterCutPercent))].filter((p) => p !== undefined);
   const displayPercentStr = uniquePercents.length === 1 ? ` (${(uniquePercents[0] * 100).toFixed(1)}%)` : "";
 
@@ -725,7 +725,7 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
               background: "rgba(251,191,36,0.06)", borderRadius: 12, padding: "16px 18px",
               border: "1px solid rgba(251,191,36,0.08)",
             }}>
-              <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, marginBottom: 4 }}>YOUR EARNINGS ({singlePercent})</div>
+              <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, marginBottom: 4 }}>YOUR EARNINGS{singlePercent ? ` (${singlePercent})` : ""}</div>
               <div style={{ fontSize: 26, fontWeight: 700, color: C.earn }}>{fmt(list[0].chatterCut)}</div>
             </div>
           </div>
@@ -894,6 +894,84 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
 }
 
 /* ═══ MAIN APP ═══ */
+
+function TierEditor({ tiers, onChange, symbol }) {
+  const rows = (tiers && tiers.length) ? tiers : [{ upTo: null, rate: 0.1 }];
+  const set = (i, patch) => onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const addRow = () => {
+    const caps = rows.filter((r) => r.upTo != null);
+    const nextCap = caps.length ? Number(caps[caps.length - 1].upTo) + 1000 : 1000;
+    const last = rows[rows.length - 1];
+    onChange([...rows.slice(0, -1), { upTo: nextCap, rate: last.rate }, { upTo: null, rate: last.rate }]);
+  };
+  const removeRow = (i) => { if (rows.length > 1) onChange(rows.filter((_, idx) => idx !== i)); };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12 }}>
+          <span style={{ color: C.textMuted, width: 46 }}>{r.upTo == null ? "Above" : "Up to"}</span>
+          {r.upTo == null
+            ? <span style={{ flex: 1, color: C.textDim }}>—</span>
+            : <div style={{ position: "relative", flex: 1 }}>
+                <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textMuted, fontSize: 11 }}>{symbol}</span>
+                <input type="number" value={r.upTo} onChange={(e) => set(i, { upTo: Number(e.target.value) || 0 })}
+                  style={{ ...inpStyle, padding: "7px 8px 7px 18px", fontSize: 12 }} />
+              </div>}
+          <span style={{ color: C.textMuted }}>→</span>
+          <div style={{ position: "relative", width: 78 }}>
+            <input type="number" step="0.1" value={+((r.rate || 0) * 100).toFixed(4)} onChange={(e) => set(i, { rate: (Number(e.target.value) || 0) / 100 })}
+              style={{ ...inpStyle, padding: "7px 18px 7px 8px", fontSize: 12 }} />
+            <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: C.textMuted, fontSize: 11 }}>%</span>
+          </div>
+          <button type="button" onClick={() => removeRow(i)} aria-label="Remove tier" style={{ background: "none", border: "none", color: "rgba(239,68,68,0.5)", cursor: "pointer", fontSize: 13, padding: 2, visibility: rows.length > 1 ? "visible" : "hidden" }}>✖</button>
+        </div>
+      ))}
+      <button type="button" onClick={addRow} style={{ alignSelf: "flex-start", background: "var(--accent-dim)", border: "1px solid var(--accent-border)", color: "var(--accent)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>+ Tier</button>
+    </div>
+  );
+}
+
+function CommissionEditor({ value, onChange, symbol = "$" }) {
+  const v = value || { model: "percent", rate: 0.1 };
+  const setModel = (m) => {
+    if (m === "percent") onChange({ model: "percent", rate: v.rate != null ? v.rate : 0.1 });
+    else if (m === "flat") onChange({ model: "flat", amount: v.amount != null ? v.amount : 0 });
+    else if (m === "hourly") onChange({ model: "hourly", rate: v.model === "hourly" ? v.rate : 0 });
+    else onChange({ model: "tiered", tiers: (v.tiers && v.tiers.length) ? v.tiers : [{ upTo: 1000, rate: 0.1 }, { upTo: null, rate: 0.15 }] });
+  };
+  const inline = { display: "flex", alignItems: "center", gap: 8 };
+  return (
+    <div>
+      <select value={v.model} onChange={(e) => setModel(e.target.value)} style={{ ...inpStyle, cursor: "pointer", background: "var(--surface)", marginBottom: 8 }}>
+        <option value="percent">Percentage of revenue</option>
+        <option value="flat">Flat fee per item</option>
+        <option value="tiered">Tiered by amount</option>
+        <option value="hourly">Hourly rate</option>
+      </select>
+      {v.model === "percent" && (
+        <div style={inline}>
+          <input type="number" step="0.1" style={inpStyle} value={+((v.rate || 0) * 100).toFixed(4)} onChange={(e) => onChange({ model: "percent", rate: (Number(e.target.value) || 0) / 100 })} />
+          <span style={{ color: C.textDim, fontSize: 13 }}>%</span>
+        </div>
+      )}
+      {v.model === "flat" && (
+        <div style={inline}>
+          <span style={{ color: C.textDim, fontSize: 13 }}>{symbol}</span>
+          <input type="number" step="1" style={inpStyle} value={v.amount || 0} onChange={(e) => onChange({ model: "flat", amount: Number(e.target.value) || 0 })} />
+          <span style={{ color: C.textMuted, fontSize: 12, whiteSpace: "nowrap" }}>per item</span>
+        </div>
+      )}
+      {v.model === "hourly" && (
+        <div style={inline}>
+          <span style={{ color: C.textDim, fontSize: 13 }}>{symbol}</span>
+          <input type="number" step="1" style={inpStyle} value={v.rate || 0} onChange={(e) => onChange({ model: "hourly", rate: Number(e.target.value) || 0 })} />
+          <span style={{ color: C.textMuted, fontSize: 12, whiteSpace: "nowrap" }}>per hour</span>
+        </div>
+      )}
+      {v.model === "tiered" && <TierEditor tiers={v.tiers} onChange={(tiers) => onChange({ model: "tiered", tiers })} symbol={symbol} />}
+    </div>
+  );
+}
 
 function SettingsPanel({ initial, onClose, onSave }) {
   const [d, setD] = useState(() => JSON.parse(JSON.stringify(initial)));
@@ -1183,21 +1261,21 @@ function App() {
   const [editingClient, setEditingClient] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  // When the Add-Client modal opens, seed the cut fields from the agency's configured defaults.
+  // When the Add-Client modal opens, seed the commission from the agency's configured defaults.
   useEffect(() => {
     if (addClientOpen) {
-      setNewClientAgencyCut(((config.commission?.defaults?.agencyShare ?? AGENCY_CUT) * 100));
-      setNewClientChatterCut(((config.commission?.defaults?.staffShare ?? CHATTER_CUT) * 100));
+      setNewAgencyPart({ model: "percent", rate: config.commission?.defaults?.agencyShare ?? AGENCY_CUT });
+      setNewStaffPart({ model: "percent", rate: config.commission?.defaults?.staffShare ?? CHATTER_CUT });
     }
   }, [addClientOpen]);
 
   // Forms
   const [newClientName, setNewClientName] = useState("");
-  const [newClientAgencyCut, setNewClientAgencyCut] = useState(7.5);
-  const [newClientChatterCut, setNewClientChatterCut] = useState(12.5);
+  const [newAgencyPart, setNewAgencyPart] = useState({ model: "percent", rate: AGENCY_CUT });
+  const [newStaffPart, setNewStaffPart] = useState({ model: "percent", rate: CHATTER_CUT });
   const [newChatterName, setNewChatterName] = useState("");
-  const [editAgCut, setEditAgCut] = useState("");
-  const [editChCut, setEditChCut] = useState("");
+  const [editAgencyPart, setEditAgencyPart] = useState({ model: "percent", rate: AGENCY_CUT });
+  const [editStaffPart, setEditStaffPart] = useState({ model: "percent", rate: CHATTER_CUT });
 
   // Sharing & Invoices
   const [shareCard, setShareCard] = useState(null);
@@ -1240,11 +1318,12 @@ function App() {
 
   const persist = (d) => { setData(d); saveData(d); };
 
-  // Populate the edit-cut fields whenever a client is opened for editing.
+  // Populate the edit-commission fields whenever a client is opened for editing.
   useEffect(() => {
     if (editingClient) {
-      setEditAgCut(((editingClient.agencyCut ?? AGENCY_CUT) * 100).toString());
-      setEditChCut(((editingClient.chatterCut ?? CHATTER_CUT) * 100).toString());
+      const comm = clientCommission(editingClient);
+      setEditAgencyPart(JSON.parse(JSON.stringify(comm.agency)));
+      setEditStaffPart(JSON.parse(JSON.stringify(comm.staff)));
     }
   }, [editingClient]);
 
@@ -1291,8 +1370,16 @@ function App() {
     setEditRecord(null);
   };
 
+  // Build the persisted commission shape; keep legacy agencyCut/chatterCut for percent
+  // so older percentage-based displays keep working.
+  const clientCommFields = (agency, staff) => ({
+    commission: { agency, staff },
+    agencyCut: agency.model === "percent" ? (Number(agency.rate) || 0) : undefined,
+    chatterCut: staff.model === "percent" ? (Number(staff.rate) || 0) : undefined,
+  });
+
   const addClient = () => {
-    const c = { id: genId(), name: newClientName, agencyCut: newClientAgencyCut / 100, chatterCut: newClientChatterCut / 100 };
+    const c = { id: genId(), name: newClientName, ...clientCommFields(newAgencyPart, newStaffPart) };
     persist({ ...data, clients: [...data.clients, c] });
     setNewClientName(""); setAddClientOpen(false);
   };
@@ -1303,8 +1390,8 @@ function App() {
     setNewChatterName(""); setAddChatterOpen(false);
   };
 
-  const updateClientCuts = (id, ag, ch) => {
-    const clients = data.clients.map((cl) => (cl.id === id ? { ...cl, agencyCut: ag, chatterCut: ch } : cl));
+  const updateClientCuts = (id, agency, staff) => {
+    const clients = data.clients.map((cl) => (cl.id === id ? { ...cl, ...clientCommFields(agency, staff) } : cl));
     persist({ ...data, clients }); setEditingClient(null);
   };
 
@@ -1559,15 +1646,11 @@ function App() {
   const totalAgency = data.records.filter((r) => dashFilterDate === "all" || r.date === dashFilterDate).reduce((s, r) => s + r.agencyCut, 0);
   const totalChatterPay = data.records.filter((r) => dashFilterDate === "all" || r.date === dashFilterDate).reduce((s, r) => s + r.chatterCut, 0);
 
-  const uniqueAgCuts = data.clients.length > 0
-    ? [...new Set(data.clients.map((cl) => cl.agencyCut !== undefined ? cl.agencyCut : AGENCY_CUT))]
-    : [AGENCY_CUT];
-  const uniqueChCuts = data.clients.length > 0
-    ? [...new Set(data.clients.map((cl) => cl.chatterCut !== undefined ? cl.chatterCut : CHATTER_CUT))]
-    : [CHATTER_CUT];
-
-  const agencyCutLabel = uniqueAgCuts.length === 1 ? `${t.agencyShareLabel} · ${(uniqueAgCuts[0] * 100).toFixed(1)}%` : t.agencyShareLabel;
-  const chatterCutLabel = uniqueChCuts.length === 1 ? `${t.staffShareLabel} · ${(uniqueChCuts[0] * 100).toFixed(1)}%` : t.staffShareLabel;
+  const sym = config.locale.currencySymbol || "$";
+  const agLabelsSet = [...new Set(data.clients.map((cl) => partLabel(clientCommission(cl).agency, sym)))];
+  const chLabelsSet = [...new Set(data.clients.map((cl) => partLabel(clientCommission(cl).staff, sym)))];
+  const agencyCutLabel = data.clients.length && agLabelsSet.length === 1 ? `${t.agencyShareLabel} · ${agLabelsSet[0]}` : t.agencyShareLabel;
+  const chatterCutLabel = data.clients.length && chLabelsSet.length === 1 ? `${t.staffShareLabel} · ${chLabelsSet[0]}` : t.staffShareLabel;
 
   const clientStats = data.clients.map((cl) => {
     const recs = data.records.filter((r) => (dashFilterDate === "all" || r.date === dashFilterDate) && data.chatters.find((c) => c.id === r.chatterId)?.clientId === cl.id);
@@ -1589,29 +1672,27 @@ function App() {
   const bulkAgencyTotal = Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
     const chatter = data.chatters.find((c) => c.id === cid);
     const client = data.clients.find((cl) => cl.id === chatter?.clientId);
-    const agCut = client?.agencyCut !== undefined ? client.agencyCut : AGENCY_CUT;
-    return acc + chatterSum(cid, vals) * agCut;
+    const hrs = Number((bulkHours[cid] || [])[0]) || 0;
+    return acc + computeShares(client, chatterSum(cid, vals), hrs).agencyShare;
   }, 0);
 
   const bulkChatterTotal = Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
     const chatter = data.chatters.find((c) => c.id === cid);
     const client = data.clients.find((cl) => cl.id === chatter?.clientId);
-    const chCut = client?.chatterCut !== undefined ? client.chatterCut : CHATTER_CUT;
-    return acc + chatterSum(cid, vals) * chCut;
+    const hrs = Number((bulkHours[cid] || [])[0]) || 0;
+    return acc + computeShares(client, chatterSum(cid, vals), hrs).staffShare;
   }, 0);
 
   const batchCuts = salesChatters.filter((c) => chatterSum(c.id) > 0).map((c) => {
     const cl = data.clients.find((x) => x.id === c.clientId);
-    return {
-      ag: cl?.agencyCut !== undefined ? cl.agencyCut : AGENCY_CUT,
-      ch: cl?.chatterCut !== undefined ? cl.chatterCut : CHATTER_CUT
-    };
+    const comm = clientCommission(cl);
+    return { ag: partLabel(comm.agency, sym), ch: partLabel(comm.staff, sym) };
   });
   const uniqueBatchAgCuts = [...new Set(batchCuts.map((c) => c.ag))];
   const uniqueBatchChCuts = [...new Set(batchCuts.map((c) => c.ch))];
 
-  const batchAgLabel = uniqueBatchAgCuts.length === 1 ? `${t.agencyShareLabel} (${(uniqueBatchAgCuts[0] * 100).toFixed(1)}%)` : t.agencyShareLabel;
-  const batchChLabel = uniqueBatchChCuts.length === 1 ? `${t.staffShareLabel} (${(uniqueBatchChCuts[0] * 100).toFixed(1)}%)` : t.staffShareLabel;
+  const batchAgLabel = uniqueBatchAgCuts.length === 1 ? `${t.agencyShareLabel} (${uniqueBatchAgCuts[0]})` : t.agencyShareLabel;
+  const batchChLabel = uniqueBatchChCuts.length === 1 ? `${t.staffShareLabel} (${uniqueBatchChCuts[0]})` : t.staffShareLabel;
 
   const filteredRecords = data.records.filter((r) => {
     const chatter = data.chatters.find((c) => c.id === r.chatterId);
@@ -1884,7 +1965,7 @@ function App() {
                                 return {
                                   name: ch.name,
                                   chatterCut: ch.chatterPay,
-                                  chatterCutPercent: cl.chatterCut !== undefined ? cl.chatterCut : CHATTER_CUT
+                                  chatterCutPercent: (() => { const sp = clientCommission(cl).staff; return sp.model === "percent" ? sp.rate : undefined; })()
                                 };
                               }),
                               clientNameStr: cl.name, date: "All Time",
@@ -1913,7 +1994,7 @@ function App() {
                                 chatters: [{
                                   name: ch.name,
                                   chatterCut: ch.chatterPay,
-                                  chatterCutPercent: data.clients.find((cl) => cl.id === ch.clientId)?.chatterCut ?? CHATTER_CUT
+                                  chatterCutPercent: (() => { const sp = clientCommission(data.clients.find((cl) => cl.id === ch.clientId)).staff; return sp.model === "percent" ? sp.rate : undefined; })()
                                 }],
                                 clientNameStr: clientNameFn(ch.clientId), date: "All Time",
                               })} style={{
@@ -1979,8 +2060,10 @@ function App() {
                     const total = chatterSum(c.id, bulkAmounts[c.id]);
                     const has = total > 0;
                     const client = data.clients.find((cl) => cl.id === c.clientId);
-                    const clientAgencyCut = client?.agencyCut !== undefined ? client.agencyCut : AGENCY_CUT;
-                    const clientChatterCut = client?.chatterCut !== undefined ? client.chatterCut : CHATTER_CUT;
+                    const usesHours = clientUsesHours(client);
+                    const rowHours = Number((bulkHours[c.id] || [])[0]) || 0;
+                    const rowShares = computeShares(client, total, rowHours);
+                    const comm = clientCommission(client);
                     return (
                       <div key={c.id} style={{ marginBottom: 8 }}>
                         <form onSubmit={(e) => handleFormSubmit(e, c.id, vals.length - 1)} className="mobile-p-small" style={{
@@ -2038,6 +2121,23 @@ function App() {
                                 </div>
                               );
                             })}
+                            {usesHours && (
+                              <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6, marginLeft: 4 }}>
+                                <span style={{ fontSize: 11, color: C.textMuted }}>⏱</span>
+                                <input
+                                  type="number" placeholder="hrs" inputMode="decimal"
+                                  value={(bulkHours[c.id] || [])[0] || ""}
+                                  aria-label={c.name + " hours"}
+                                  onChange={(e) => setBulkHours((s) => ({ ...s, [c.id]: [e.target.value] }))}
+                                  style={{
+                                    width: 70, boxSizing: "border-box", padding: "8px 10px",
+                                    background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
+                                    borderRadius: 7, color: "#fff", fontSize: 14, outline: "none",
+                                    fontFamily: "'JetBrains Mono',monospace",
+                                  }} />
+                                <span style={{ fontSize: 11, color: C.textMuted }}>hrs</span>
+                              </div>
+                            )}
                           </div>
                         </form>
                         {has && (
@@ -2054,16 +2154,16 @@ function App() {
                               </div>
                               <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.06)" }} />
                               <div>
-                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>YOU ({(clientAgencyCut * 100).toFixed(1)}%)</div>
-                                <div style={{ fontSize: 14, fontWeight: 600, color: C.accent2, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(total * clientAgencyCut)}</div>
+                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>YOU ({partLabel(comm.agency, config.locale.currencySymbol)})</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: C.accent2, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(rowShares.agencyShare)}</div>
                               </div>
                               <div>
-                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>THEM ({(clientChatterCut * 100).toFixed(1)}%)</div>
-                                <div style={{ fontSize: 14, fontWeight: 600, color: C.earn, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(total * clientChatterCut)}</div>
+                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>THEM ({partLabel(comm.staff, config.locale.currencySymbol)})</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: C.earn, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(rowShares.staffShare)}</div>
                               </div>
                             </div>
                             <button onClick={() => setShareCard({
-                              chatters: [{ name: c.name, chatterCut: total * clientChatterCut, chatterCutPercent: clientChatterCut }],
+                              chatters: [{ name: c.name, chatterCut: rowShares.staffShare, chatterCutPercent: comm.staff.model === "percent" ? comm.staff.rate : undefined }],
                               clientNameStr: clientNameFn(c.clientId), date: shortDate(salesDate),
                             })} style={{
                               background: "linear-gradient(135deg," + C.accent3 + ",#2a9d38)",
@@ -2091,8 +2191,9 @@ function App() {
                       <button onClick={() => {
                         const allCh = salesChatters.filter((c) => chatterSum(c.id) > 0).map((c) => {
                           const cl = data.clients.find((x) => x.id === c.clientId);
-                          const chCut = cl?.chatterCut !== undefined ? cl.chatterCut : CHATTER_CUT;
-                          return { name: c.name, chatterCut: chatterSum(c.id) * chCut, chatterCutPercent: chCut };
+                          const hrs = Number((bulkHours[c.id] || [])[0]) || 0;
+                          const sp = clientCommission(cl).staff;
+                          return { name: c.name, chatterCut: computeShares(cl, chatterSum(c.id), hrs).staffShare, chatterCutPercent: sp.model === "percent" ? sp.rate : undefined };
                         });
                         if (allCh.length) setShareCard({ chatters: allCh, clientNameStr: salesClientId === "all" ? `All ${t.client.many}` : clientNameFn(salesClientId), date: shortDate(salesDate) });
                       }} style={{
@@ -2332,18 +2433,12 @@ function App() {
             onKeyDown={(e) => { if (e.key === "Enter") addClient(); }}
             style={inpStyle} />
         </Field>
-        <div style={{ display: "flex", gap: 12 }}>
-          <Field label={`${t.agencyShareLabel} (%)`}>
-            <input type="number" step="0.1" value={newClientAgencyCut}
-              onChange={(e) => setNewClientAgencyCut(e.target.value)}
-              style={inpStyle} />
-          </Field>
-          <Field label={`${t.staffShareLabel} (%)`}>
-            <input type="number" step="0.1" value={newClientChatterCut}
-              onChange={(e) => setNewClientChatterCut(e.target.value)}
-              style={inpStyle} />
-          </Field>
-        </div>
+        <Field label={t.agencyShareLabel}>
+          <CommissionEditor value={newAgencyPart} onChange={setNewAgencyPart} symbol={config.locale.currencySymbol} />
+        </Field>
+        <Field label={t.staffShareLabel}>
+          <CommissionEditor value={newStaffPart} onChange={setNewStaffPart} symbol={config.locale.currencySymbol} />
+        </Field>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
           <Btn variant="secondary" onClick={() => setAddClientOpen(false)}>Cancel</Btn>
           <Btn onClick={addClient} disabled={!newClientName.trim()}>Add {t.client.one}</Btn>
@@ -2373,30 +2468,25 @@ function App() {
       <Modal open={!!editingClient} onClose={() => setEditingClient(null)} title={`${t.client.one} Settings`}>
         {editingClient && (
           <div>
-            <p style={{ fontSize: 13, color: C.textDim, marginBottom: 18 }}>Update paycut percentages for <strong>{editingClient.name}</strong>.</p>
-            <div style={{ display: "flex", gap: 12 }}>
-              <Field label={`${t.agencyShareLabel} (%)`}>
-                <input type="number" step="0.1" min="0" max="100" value={editAgCut}
-                  onChange={(e) => setEditAgCut(e.target.value)}
-                  aria-label="Agency cut percent" style={inpStyle} />
-              </Field>
-              <Field label={`${t.staffShareLabel} (%)`}>
-                <input type="number" step="0.1" min="0" max="100" value={editChCut}
-                  onChange={(e) => setEditChCut(e.target.value)}
-                  aria-label="Chatter pay percent" style={inpStyle} />
-              </Field>
-            </div>
+            <p style={{ fontSize: 13, color: C.textDim, marginBottom: 18 }}>How payouts are calculated for <strong>{editingClient.name}</strong>.</p>
+            <Field label={t.agencyShareLabel}>
+              <CommissionEditor value={editAgencyPart} onChange={setEditAgencyPart} symbol={config.locale.currencySymbol} />
+            </Field>
+            <Field label={t.staffShareLabel}>
+              <CommissionEditor value={editStaffPart} onChange={setEditStaffPart} symbol={config.locale.currencySymbol} />
+            </Field>
             {(() => {
-              const ag = parseFloat(editAgCut), ch = parseFloat(editChCut);
-              const invalid = isNaN(ag) || isNaN(ch) || ag < 0 || ch < 0 || ag + ch > 100;
+              const example = 1000;
+              const ag = computeShare(editAgencyPart, example, 10);
+              const st = computeShare(editStaffPart, example, 10);
               return (
                 <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
-                  <span style={{ fontSize: 11, color: invalid ? "#ef4444" : C.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>
-                    {invalid ? "Enter valid percentages (0–100, sum ≤ 100)" : `Creator keeps ${(100 - ag - ch).toFixed(1)}%`}
+                  <span style={{ fontSize: 11, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>
+                    On {fmt(example)}{(editAgencyPart.model === "hourly" || editStaffPart.model === "hourly") ? " · 10h" : ""}: you {fmt(ag)} · them {fmt(st)}
                   </span>
                   <div style={{ display: "flex", gap: 8 }}>
                     <Btn variant="secondary" onClick={() => setEditingClient(null)}>Cancel</Btn>
-                    <Btn disabled={invalid} onClick={() => updateClientCuts(editingClient.id, ag / 100, ch / 100)}>Save changes</Btn>
+                    <Btn onClick={() => updateClientCuts(editingClient.id, editAgencyPart, editStaffPart)}>Save changes</Btn>
                   </div>
                 </div>
               );
