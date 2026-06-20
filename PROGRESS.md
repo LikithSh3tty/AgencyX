@@ -30,8 +30,7 @@ errors with a missing rollup module, run `npm install @rollup/rollup-linux-x64-g
 - [x] Money as integer cents — DONE: shares rounded to whole cents at source; all totals sum in integer cents (toCents/fromCents/sumMoney); no storage migration.
 - [ ] Performance — wrap dashboard/client/chatter aggregates in useMemo; build Map
       lookups (id->client, id->chatter) once instead of .find() inside .map().
-- [ ] True multi-currency — parser already reads currency symbols but display is USD-only.
-      Needs a currency field per record + per-client default. (Data-model change.)
+- [x] True multi-currency — DONE: per-client currency, config.currencies with base-conversion rates, records stamped with currency, native-currency display everywhere, dashboard totals converted to base, Settings currency manager. Single-currency unchanged.
 - [ ] Split the 1,600-line file into components / add TypeScript.
 - [ ] Backend / cloud sync (the real fix for "data only lives in one browser").
 

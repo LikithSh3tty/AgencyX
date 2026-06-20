@@ -38,6 +38,40 @@ const money = (dollars) => fromCents(toCents(dollars));
 // Sum an array of dollar values exactly (accumulate in integer cents).
 const sumMoney = (arr, fn = (x) => x) => fromCents(arr.reduce((c, x) => c + toCents(fn(x)), 0));
 
+// ── Multi-currency ──────────────────────────────────────────────────
+// The workspace has one BASE (reporting) currency (config.locale). Additional currencies
+// live in config.currencies as { code, symbol, rate, locale } where rate = value of 1 unit
+// of that currency in the base currency. Each client/record can be in any enabled currency.
+let currencyReg = { base: "USD", map: { USD: { symbol: "$", locale: "en-US", rate: 1, words: { major: "Dollars", minor: "Cents" } } } };
+const setCurrencyContext = (config) => {
+  const loc = (config && config.locale) || {};
+  const base = (loc.currency || "USD").toUpperCase();
+  const map = {};
+  map[base] = { symbol: loc.currencySymbol || "$", locale: loc.locale || "en-US", rate: 1, words: loc.currencyWords || { major: "Dollars", minor: "Cents" } };
+  ((config && config.currencies) || []).forEach((c) => {
+    if (!c || !c.code) return;
+    const code = String(c.code).toUpperCase();
+    if (code === base) return; // base is fixed at rate 1
+    map[code] = { symbol: c.symbol || code, locale: c.locale || loc.locale || "en-US", rate: Number(c.rate) || 0, words: c.words || { major: code, minor: "" } };
+  });
+  currencyReg = { base, map };
+};
+const baseCode = () => currencyReg.base;
+const curInfo = (code) => currencyReg.map[String(code || currencyReg.base).toUpperCase()] || currencyReg.map[currencyReg.base];
+const isMultiCurrency = () => Object.keys(currencyReg.map).length > 1;
+// Format a value in a specific currency code (defaults to base).
+const fmtIn = (n, code) => {
+  const v = Number(n) || 0;
+  const cc = String(code || currencyReg.base).toUpperCase();
+  const info = curInfo(cc);
+  try { return new Intl.NumberFormat(info.locale, { style: "currency", currency: cc }).format(v); }
+  catch { return info.symbol + v.toFixed(2); }
+};
+// Convert an amount in `code` to the base currency (rounded to cents).
+const toBase = (amount, code) => money((Number(amount) || 0) * (curInfo(code).rate || 0));
+// A client's currency code (defaults to base).
+const clientCur = (client) => String((client && client.currency) || currencyReg.base).toUpperCase();
+
 function useCountUp(target, duration = 1000) {
   const [val, setVal] = useState(0);
   const fromRef = useRef(0);
@@ -80,8 +114,7 @@ const defaultConfig = {
     currency: "USD",
     currencySymbol: "$",
     amountInWords: true,
-    currencyWords: { major: "Dollars", minor: "Cents" },
-    taxRate: 0,
+    currencyWords: { major: "Dollars", minor: "Cents" },    taxRate: 0,
     taxLabel: "Tax",
     taxLine: "",
   },
@@ -110,6 +143,7 @@ const defaultConfig = {
     model: "percent",
     defaults: { agencyShare: AGENCY_CUT, staffShare: CHATTER_CUT },
   },
+  currencies: [], // additional non-base currencies: { code, symbol, rate, locale }
   onboarded: false,
 };
 
@@ -499,7 +533,7 @@ function RevenueTrend({ records, delay = 0 }) {
   const { terms } = useConfig();
   const series = useMemo(() => {
     const byDate = {};
-    records.forEach((r) => { byDate[r.date] = (byDate[r.date] || 0) + r.amount; });
+    records.forEach((r) => { byDate[r.date] = (byDate[r.date] || 0) + toBase(r.amount, r.currency); });
     return Object.keys(byDate).sort().slice(-30).map((d) => ({ date: d, value: byDate[d] }));
   }, [records]);
 
@@ -703,7 +737,7 @@ function TabBar({ active, onChange }) {
 }
 
 /* ── Share Card ── */
-function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
+function ShareCard({ chatters: list, clientNameStr, date, onClose, currency }) {
   const { business, terms } = useConfig();
   const isSingle = list.length === 1;
   const totalCut = sumMoney(list, (c) => c.chatterCut);
@@ -759,7 +793,7 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
               border: "1px solid rgba(251,191,36,0.08)",
             }}>
               <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.5, marginBottom: 4 }}>YOUR EARNINGS{singlePercent ? ` (${singlePercent})` : ""}</div>
-              <div style={{ fontSize: 26, fontWeight: 700, color: C.earn }}>{fmt(list[0].chatterCut)}</div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: C.earn }}>{fmtIn(list[0].chatterCut, currency)}</div>
             </div>
           </div>
         ) : (
@@ -775,7 +809,7 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
                   border: "1px solid rgba(251,191,36,0.06)",
                 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: "#fff" }}>{c.name}</span>
-                  <span style={{ fontWeight: 700, fontSize: 16, color: C.earn, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(c.chatterCut)}</span>
+                  <span style={{ fontWeight: 700, fontSize: 16, color: C.earn, fontFamily: "'JetBrains Mono',monospace" }}>{fmtIn(c.chatterCut, currency)}</span>
                 </div>
               ))}
             </div>
@@ -785,7 +819,7 @@ function ShareCard({ chatters: list, clientNameStr, date, onClose }) {
               border: "1px solid " + C.accentBorder,
             }}>
               <span style={{ fontWeight: 600, fontSize: 13, color: C.textDim }}>Total Payouts</span>
-              <span style={{ fontWeight: 700, fontSize: 18, color: C.accent, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(totalCut)}</span>
+              <span style={{ fontWeight: 700, fontSize: 18, color: C.accent, fontFamily: "'JetBrains Mono',monospace" }}>{fmtIn(totalCut, currency)}</span>
             </div>
           </div>
         )}
@@ -832,6 +866,7 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
   due.setDate(due.getDate() + (invoice.dueDays || 0));
   const dueStr = due.toLocaleDateString(locale.locale || "en-GB");
   const invAmount = money(customAmount ?? (() => { const s = computeShares(client, record.amount, record.hours || 0); return s.agencyShare + s.staffShare; })());
+  const invCur = (record.currency || baseCode());
   const taxRate = Number(locale.taxRate) || 0;
   const tax = money(invAmount * taxRate);
   const total = money(invAmount + tax);
@@ -894,8 +929,8 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
               <div style={{ fontWeight: 600 }}>{invoice.lineItemLabel} - {client.name}</div>
             </div>
             <div style={{ flex: 1, textAlign: "right" }}>1.00</div>
-            <div style={{ flex: 1, textAlign: "right" }}>{fmt(invAmount)}</div>
-            <div style={{ flex: 1, textAlign: "right" }}>{fmt(invAmount)}</div>
+            <div style={{ flex: 1, textAlign: "right" }}>{fmtIn(invAmount, invCur)}</div>
+            <div style={{ flex: 1, textAlign: "right" }}>{fmtIn(invAmount, invCur)}</div>
           </div>
         </div>
 
@@ -904,28 +939,28 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
           <div style={{ width: "300px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
               <span>Untaxed Amount</span>
-              <span>{fmt(invAmount)}</span>
+              <span>{fmtIn(invAmount, invCur)}</span>
             </div>
             {taxRate > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
                 <span>{locale.taxLabel || "Tax"} ({(taxRate * 100).toFixed(taxRate * 100 % 1 ? 1 : 0)}%)</span>
-                <span>{fmt(tax)}</span>
+                <span>{fmtIn(tax, invCur)}</span>
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13, borderTop: "1px solid #000", paddingTop: 8 }}>
               <span>Total</span>
-              <span>{fmt(total)}</span>
+              <span>{fmtIn(total, invCur)}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 14 }}>
               <span>Amount Due</span>
-              <span>{fmt(total)}</span>
+              <span>{fmtIn(total, invCur)}</span>
             </div>
           </div>
         </div>
 
         {/* Bottom Text */}
         <div style={{ marginTop: 60 }}>
-          {locale.amountInWords !== false && (
+          {locale.amountInWords !== false && invCur === baseCode() && (
             <div style={{ fontSize: 12, fontStyle: "italic", marginBottom: 20 }}>
               {toWords(total)}
             </div>
@@ -951,6 +986,16 @@ function InvoiceView({ record, client, onClose, customAmount, isPrinting, onDone
 }
 
 /* ═══ MAIN APP ═══ */
+
+function CurrencySelect({ value, onChange }) {
+  const codes = Object.keys(currencyReg.map);
+  return (
+    <select value={(value || currencyReg.base).toUpperCase()} onChange={(e) => onChange(e.target.value)}
+      style={{ ...inpStyle, cursor: "pointer", background: "var(--surface)" }}>
+      {codes.map((c) => <option key={c} value={c}>{c} ({currencyReg.map[c].symbol})</option>)}
+    </select>
+  );
+}
 
 function TierEditor({ tiers, onChange, symbol }) {
   const rows = (tiers && tiers.length) ? tiers : [{ upTo: null, rate: 0.1 }];
@@ -1059,6 +1104,11 @@ function SettingsPanel({ initial, onClose, onSave }) {
       out.branding.accent3 = darken(d.branding.accent, 0.22);
     }
     out.locale.taxRate = Number(d.locale.taxRate) || 0;
+    const baseC = (out.locale.currency || "USD").toUpperCase();
+    out.currencies = (d.currencies || [])
+      .map((c) => ({ code: String(c.code || "").toUpperCase().trim(), symbol: c.symbol || "", rate: Number(c.rate) || 0 }))
+      .filter((c) => c.code && c.code !== baseC && c.rate > 0)
+      .filter((c, i, arr) => arr.findIndex((x) => x.code === c.code) === i);
     out.invoice.fiscalYearStartMonth = Number(d.invoice.fiscalYearStartMonth) || 1;
     out.invoice.dueDays = Number(d.invoice.dueDays) || 0;
     onSave(out);
@@ -1136,6 +1186,33 @@ function SettingsPanel({ initial, onClose, onSave }) {
             <input type="checkbox" checked={d.locale.amountInWords !== false} onChange={(e) => setL("amountInWords", e.target.checked)} style={{ width: 16, height: 16, accentColor: "var(--accent)" }} />
             Show amount in words on invoices
           </label>
+        </SettingsSection>
+
+        <SettingsSection title="Currencies">
+          <p style={{ fontSize: 12.5, color: C.textDim, marginBottom: 14, lineHeight: 1.5 }}>
+            Base currency is <strong>{(d.locale.currency || "USD").toUpperCase()}</strong>. Add other currencies your {(d.terms?.client?.many || "clients").toLowerCase()} invoice in — <em>rate</em> is the value of 1 unit in {(d.locale.currency || "USD").toUpperCase()} (e.g. 1 EUR = 1.08 USD → rate 1.08). Dashboard totals convert to base at these rates.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, fontSize: 12, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>
+            <span style={{ width: 78, fontWeight: 700, color: C.accent }}>{(d.locale.currency || "USD").toUpperCase()}</span>
+            <span style={{ width: 52 }}>{d.locale.currencySymbol}</span>
+            <span>base · rate 1.0000</span>
+          </div>
+          {(d.currencies || []).map((c, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+              <input placeholder="EUR" value={c.code || ""} onChange={(e) => setD((s) => ({ ...s, currencies: s.currencies.map((x, idx) => idx === i ? { ...x, code: e.target.value.toUpperCase() } : x) }))}
+                style={{ ...inpStyle, width: 78, textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" }} />
+              <input placeholder="€" value={c.symbol || ""} onChange={(e) => setD((s) => ({ ...s, currencies: s.currencies.map((x, idx) => idx === i ? { ...x, symbol: e.target.value } : x) }))}
+                style={{ ...inpStyle, width: 52, textAlign: "center" }} />
+              <div style={{ position: "relative", flex: 1 }}>
+                <input type="number" step="0.0001" placeholder="rate in base" value={c.rate ?? ""} onChange={(e) => setD((s) => ({ ...s, currencies: s.currencies.map((x, idx) => idx === i ? { ...x, rate: e.target.value } : x) }))}
+                  style={inpStyle} />
+              </div>
+              <button type="button" aria-label="Remove currency" onClick={() => setD((s) => ({ ...s, currencies: s.currencies.filter((_, idx) => idx !== i) }))}
+                style={{ background: "none", border: "none", color: "rgba(239,68,68,0.55)", cursor: "pointer", fontSize: 14, padding: 4 }}>✖</button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setD((s) => ({ ...s, currencies: [...(s.currencies || []), { code: "", symbol: "", rate: 1 }] }))}
+            style={{ marginTop: 4, background: "var(--accent-dim)", border: "1px solid var(--accent-border)", color: "var(--accent)", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>+ Add currency</button>
         </SettingsSection>
 
         <SettingsSection title="Invoice">
@@ -1312,6 +1389,7 @@ function App() {
   const [data, setData] = useState(defaultState);
   const config = data.config || defaultConfig;
   setActiveCurrency(config.locale);
+  setCurrencyContext(config);
   const t = config.terms;
   const needsOnboarding = !config.onboarded
     && data.clients.length === 0 && data.chatters.length === 0 && data.records.length === 0;
@@ -1342,6 +1420,7 @@ function App() {
       const dp = defaultCommissionParts(config);
       setNewAgencyPart(JSON.parse(JSON.stringify(dp.agency)));
       setNewStaffPart(JSON.parse(JSON.stringify(dp.staff)));
+      setNewClientCurrency(config.locale.currency || "USD");
     }
   }, [addClientOpen]);
 
@@ -1349,9 +1428,11 @@ function App() {
   const [newClientName, setNewClientName] = useState("");
   const [newAgencyPart, setNewAgencyPart] = useState({ model: "percent", rate: AGENCY_CUT });
   const [newStaffPart, setNewStaffPart] = useState({ model: "percent", rate: CHATTER_CUT });
+  const [newClientCurrency, setNewClientCurrency] = useState(config.locale.currency || "USD");
   const [newChatterName, setNewChatterName] = useState("");
   const [editAgencyPart, setEditAgencyPart] = useState({ model: "percent", rate: AGENCY_CUT });
   const [editStaffPart, setEditStaffPart] = useState({ model: "percent", rate: CHATTER_CUT });
+  const [editClientCurrency, setEditClientCurrency] = useState(config.locale.currency || "USD");
 
   // Sharing & Invoices
   const [shareCard, setShareCard] = useState(null);
@@ -1400,6 +1481,7 @@ function App() {
       const comm = clientCommission(editingClient);
       setEditAgencyPart(JSON.parse(JSON.stringify(comm.agency)));
       setEditStaffPart(JSON.parse(JSON.stringify(comm.staff)));
+      setEditClientCurrency(editingClient.currency || config.locale.currency || "USD");
     }
   }, [editingClient]);
 
@@ -1439,7 +1521,7 @@ function App() {
     const { agencyShare, staffShare } = computeShares(client, amt, editRecord.hours || 0);
     const records = data.records.map((r) =>
       r.id === editRecord.id
-        ? { ...r, amount: money(amt), date: editDate, agencyCut: agencyShare, chatterCut: staffShare }
+        ? { ...r, amount: money(amt), date: editDate, agencyCut: agencyShare, chatterCut: staffShare, currency: clientCur(client) }
         : r
     );
     persist({ ...data, records });
@@ -1455,7 +1537,7 @@ function App() {
   });
 
   const addClient = () => {
-    const c = { id: genId(), name: newClientName, ...clientCommFields(newAgencyPart, newStaffPart) };
+    const c = { id: genId(), name: newClientName, currency: (newClientCurrency || config.locale.currency || "USD").toUpperCase(), ...clientCommFields(newAgencyPart, newStaffPart) };
     persist({ ...data, clients: [...data.clients, c] });
     setNewClientName(""); setAddClientOpen(false);
   };
@@ -1467,7 +1549,7 @@ function App() {
   };
 
   const updateClientCuts = (id, agency, staff) => {
-    const clients = data.clients.map((cl) => (cl.id === id ? { ...cl, ...clientCommFields(agency, staff) } : cl));
+    const clients = data.clients.map((cl) => (cl.id === id ? { ...cl, currency: (editClientCurrency || config.locale.currency || "USD").toUpperCase(), ...clientCommFields(agency, staff) } : cl));
     persist({ ...data, clients }); setEditingClient(null);
   };
 
@@ -1536,7 +1618,7 @@ function App() {
           const client = data.clients.find((cl) => cl.id === (chatter?.clientId));
           const hours = Number((bulkHours[cid] || [])[0]) || 0;
           const { agencyShare, staffShare } = computeShares(client, num, hours);
-          const rec = { id: genId(), chatterId: cid, amount: money(num), date: salesDate, agencyCut: agencyShare, chatterCut: staffShare };
+          const rec = { id: genId(), chatterId: cid, amount: money(num), date: salesDate, agencyCut: agencyShare, chatterCut: staffShare, currency: clientCur(client) };
           if (hours) rec.hours = hours;
           newRecs.push(rec);
         }
@@ -1720,9 +1802,16 @@ function App() {
 
   const salesChatters = data.chatters.filter((c) => salesClientId === "all" || c.clientId === salesClientId);
   const dashRecs = data.records.filter((r) => dashFilterDate === "all" || r.date === dashFilterDate);
-  const totalSales = sumMoney(dashRecs, (r) => r.amount);
-  const totalAgency = sumMoney(dashRecs, (r) => r.agencyCut);
-  const totalChatterPay = sumMoney(dashRecs, (r) => r.chatterCut);
+  const totalSales = sumMoney(dashRecs, (r) => toBase(r.amount, r.currency));
+  const totalAgency = sumMoney(dashRecs, (r) => toBase(r.agencyCut, r.currency));
+  const totalChatterPay = sumMoney(dashRecs, (r) => toBase(r.chatterCut, r.currency));
+  // Per-currency breakdown of sales (for the multi-currency note).
+  const salesByCurrency = (() => {
+    const m = {};
+    dashRecs.forEach((r) => { const c = (r.currency || baseCode()).toUpperCase(); m[c] = fromCents(toCents(m[c] || 0) + toCents(r.amount)); });
+    return m;
+  })();
+  const usedCurrencies = Object.keys(salesByCurrency);
 
   const sym = config.locale.currencySymbol || "$";
   const agLabelsSet = [...new Set(data.clients.map((cl) => partLabel(clientCommission(cl).agency, sym)))];
@@ -1732,33 +1821,38 @@ function App() {
 
   const clientStats = data.clients.map((cl) => {
     const recs = data.records.filter((r) => (dashFilterDate === "all" || r.date === dashFilterDate) && data.chatters.find((c) => c.id === r.chatterId)?.clientId === cl.id);
-    return { id: cl.id, name: cl.name, agencyCut: cl.agencyCut, chatterCut: cl.chatterCut, total: sumMoney(recs, (r) => r.amount), agency: sumMoney(recs, (r) => r.agencyCut), chatterPay: sumMoney(recs, (r) => r.chatterCut), chatterCount: data.chatters.filter((c) => c.clientId === cl.id).length };
+    return { id: cl.id, name: cl.name, currency: clientCur(cl), agencyCut: cl.agencyCut, chatterCut: cl.chatterCut, total: sumMoney(recs, (r) => r.amount), agency: sumMoney(recs, (r) => r.agencyCut), chatterPay: sumMoney(recs, (r) => r.chatterCut), chatterCount: data.chatters.filter((c) => c.clientId === cl.id).length };
   });
 
   const chatterStats = data.chatters.map((ch) => {
     const recs = data.records.filter((r) => (dashFilterDate === "all" || r.date === dashFilterDate) && r.chatterId === ch.id);
-    return { id: ch.id, name: ch.name, clientId: ch.clientId, total: sumMoney(recs, (r) => r.amount), agency: sumMoney(recs, (r) => r.agencyCut), chatterPay: sumMoney(recs, (r) => r.chatterCut), count: recs.length };
+    const cl = data.clients.find((c) => c.id === ch.clientId);
+    return { id: ch.id, name: ch.name, clientId: ch.clientId, currency: clientCur(cl), total: sumMoney(recs, (r) => r.amount), agency: sumMoney(recs, (r) => r.agencyCut), chatterPay: sumMoney(recs, (r) => r.chatterCut), count: recs.length };
   });
 
   const clientNameFn = (id) => data.clients.find((c) => c.id === id)?.name || "Unknown";
   const chatterNameFn = (id) => data.chatters.find((c) => c.id === id)?.name || "Unknown";
   const chatterClientFn = (id) => data.chatters.find((c) => c.id === id)?.clientId;
 
-  const bulkTotal = fromCents(Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => acc + toCents(chatterSum(cid, vals)), 0));
+  const bulkTotal = fromCents(Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
+    const chatter = data.chatters.find((c) => c.id === cid);
+    const client = data.clients.find((cl) => cl.id === chatter?.clientId);
+    return acc + toCents(toBase(chatterSum(cid, vals), clientCur(client)));
+  }, 0));
   const bulkHas = bulkTotal > 0;
 
   const bulkAgencyTotal = fromCents(Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
     const chatter = data.chatters.find((c) => c.id === cid);
     const client = data.clients.find((cl) => cl.id === chatter?.clientId);
     const hrs = Number((bulkHours[cid] || [])[0]) || 0;
-    return acc + toCents(computeShares(client, chatterSum(cid, vals), hrs).agencyShare);
+    return acc + toCents(toBase(computeShares(client, chatterSum(cid, vals), hrs).agencyShare, clientCur(client)));
   }, 0));
 
   const bulkChatterTotal = fromCents(Object.entries(bulkAmounts).reduce((acc, [cid, vals]) => {
     const chatter = data.chatters.find((c) => c.id === cid);
     const client = data.clients.find((cl) => cl.id === chatter?.clientId);
     const hrs = Number((bulkHours[cid] || [])[0]) || 0;
-    return acc + toCents(computeShares(client, chatterSum(cid, vals), hrs).staffShare);
+    return acc + toCents(toBase(computeShares(client, chatterSum(cid, vals), hrs).staffShare, clientCur(client)));
   }, 0));
 
   const batchCuts = salesChatters.filter((c) => chatterSum(c.id) > 0).map((c) => {
@@ -2003,6 +2097,13 @@ function App() {
               <StatCard label={chatterCutLabel} amount={totalChatterPay} accent="rgba(167,139,250,0.10)" delay={140} />
             </div>
 
+            {isMultiCurrency() && usedCurrencies.length > 1 && (
+              <div style={{ marginTop: -16, marginBottom: 22, fontSize: 11.5, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span>↔</span>
+                <span>Totals in {baseCode()}, converted from {usedCurrencies.join(", ")} at your configured rates.</span>
+              </div>
+            )}
+
             <RevenueTrend records={data.records} delay={180} />
 
             {totalSales > 0 && <SplitRing total={totalSales} agency={totalAgency} chatter={totalChatterPay} delay={220} />}
@@ -2025,7 +2126,7 @@ function App() {
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontWeight: 700, fontSize: 16, color: "var(--accent)" }}>{fmt(cl.total)}</span>
+                          <span style={{ fontWeight: 700, fontSize: 16, color: "var(--accent)" }}>{fmtIn(cl.total, cl.currency)}</span>
                           {cl.total > 0 && (
                             <button onClick={() => setInvoiceView({
                               record: { id: "agg-" + cl.id, amount: cl.total, date: dashFilterDate === "all" ? today() : dashFilterDate },
@@ -2046,7 +2147,7 @@ function App() {
                                   chatterCutPercent: (() => { const sp = clientCommission(cl).staff; return sp.model === "percent" ? sp.rate : undefined; })()
                                 };
                               }),
-                              clientNameStr: cl.name, date: "All Time",
+                              clientNameStr: cl.name, date: "All Time", currency: cl.currency,
                             })} style={{
                               background: C.accentDim, border: "none", borderRadius: 6, color: C.accent,
                               fontSize: 10, padding: "4px 10px", cursor: "pointer", fontWeight: 600,
@@ -2062,11 +2163,11 @@ function App() {
                             <span style={{ color: C.textMuted, fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>({ch.count})</span>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: C.accent }}>{fmt(ch.total)}</span>
+                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: C.accent }}>{fmtIn(ch.total, ch.currency)}</span>
                             <span style={{ color: C.textMuted }}>·</span>
-                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: C.accent2 }}>{fmt(ch.agency)}</span>
+                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: C.accent2 }}>{fmtIn(ch.agency, ch.currency)}</span>
                             <span style={{ color: C.textMuted }}>·</span>
-                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: C.earn }}>{fmt(ch.chatterPay)}</span>
+                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: C.earn }}>{fmtIn(ch.chatterPay, ch.currency)}</span>
                             {ch.chatterPay > 0 && (
                               <button onClick={() => setShareCard({
                                 chatters: [{
@@ -2074,7 +2175,7 @@ function App() {
                                   chatterCut: ch.chatterPay,
                                   chatterCutPercent: (() => { const sp = clientCommission(data.clients.find((cl) => cl.id === ch.clientId)).staff; return sp.model === "percent" ? sp.rate : undefined; })()
                                 }],
-                                clientNameStr: clientNameFn(ch.clientId), date: "All Time",
+                                clientNameStr: clientNameFn(ch.clientId), date: "All Time", currency: ch.currency,
                               })} style={{
                                 background: C.accentDim, border: "none", borderRadius: 5, color: C.accent,
                                 fontSize: 10, padding: "2px 7px", cursor: "pointer", fontWeight: 600,
@@ -2228,21 +2329,21 @@ function App() {
                             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                               <div>
                                 <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>TOTAL</div>
-                                <div style={{ fontSize: 20, fontWeight: 700, color: C.accent, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(total)}</div>
+                                <div style={{ fontSize: 20, fontWeight: 700, color: C.accent, fontFamily: "'JetBrains Mono',monospace" }}>{fmtIn(total, clientCur(client))}</div>
                               </div>
                               <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.06)" }} />
                               <div>
-                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>YOU ({partLabel(comm.agency, config.locale.currencySymbol)})</div>
-                                <div style={{ fontSize: 14, fontWeight: 600, color: C.accent2, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(rowShares.agencyShare)}</div>
+                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>YOU ({partLabel(comm.agency, curInfo(clientCur(client)).symbol)})</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: C.accent2, fontFamily: "'JetBrains Mono',monospace" }}>{fmtIn(rowShares.agencyShare, clientCur(client))}</div>
                               </div>
                               <div>
-                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>THEM ({partLabel(comm.staff, config.locale.currencySymbol)})</div>
-                                <div style={{ fontSize: 14, fontWeight: 600, color: C.earn, fontFamily: "'JetBrains Mono',monospace" }}>{fmt(rowShares.staffShare)}</div>
+                                <div style={{ fontSize: 10, color: C.textDim, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.4 }}>THEM ({partLabel(comm.staff, curInfo(clientCur(client)).symbol)})</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: C.earn, fontFamily: "'JetBrains Mono',monospace" }}>{fmtIn(rowShares.staffShare, clientCur(client))}</div>
                               </div>
                             </div>
                             <button onClick={() => setShareCard({
                               chatters: [{ name: c.name, chatterCut: rowShares.staffShare, chatterCutPercent: comm.staff.model === "percent" ? comm.staff.rate : undefined }],
-                              clientNameStr: clientNameFn(c.clientId), date: shortDate(salesDate),
+                              clientNameStr: clientNameFn(c.clientId), date: shortDate(salesDate), currency: clientCur(client),
                             })} style={{
                               background: "linear-gradient(135deg," + C.accent3 + ",#2a9d38)",
                               border: "none", borderRadius: 8, color: "#04231b", padding: "8px 14px",
@@ -2481,9 +2582,9 @@ function App() {
                       <div style={{ fontWeight: 600 }}>{chatterNameFn(r.chatterId)}</div>
                       <div style={{ color: C.textDim, fontSize: 12 }}>{clientNameFn(chatterClientFn(r.chatterId))}</div>
                       <div style={{ color: C.textMuted, fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }}>{shortDate(r.date)}</div>
-                      <div style={{ fontWeight: 700, color: C.accent }}>{fmt(r.amount)}</div>
-                      <div style={{ color: C.accent2, fontSize: 12 }}>{fmt(r.agencyCut)}</div>
-                      <div style={{ color: C.earn, fontSize: 12 }}>{fmt(r.chatterCut)}</div>
+                      <div style={{ fontWeight: 700, color: C.accent }}>{fmtIn(r.amount, r.currency)}</div>
+                      <div style={{ color: C.accent2, fontSize: 12 }}>{fmtIn(r.agencyCut, r.currency)}</div>
+                      <div style={{ color: C.earn, fontSize: 12 }}>{fmtIn(r.chatterCut, r.currency)}</div>
                       <div className="no-print" style={{ display: "flex", gap: 2, gridColumn: "7", justifyContent: "flex-end" }}>
                         <button onClick={() => setEditRecord(r)} aria-label="Edit sale" title="Edit" style={{
                           background: "none", border: "none", color: "rgba(255,255,255,0.35)",
@@ -2512,11 +2613,16 @@ function App() {
             style={inpStyle} />
         </Field>
         <Field label={t.agencyShareLabel}>
-          <CommissionEditor value={newAgencyPart} onChange={setNewAgencyPart} symbol={config.locale.currencySymbol} />
+          <CommissionEditor value={newAgencyPart} onChange={setNewAgencyPart} symbol={curInfo(newClientCurrency).symbol} />
         </Field>
         <Field label={t.staffShareLabel}>
-          <CommissionEditor value={newStaffPart} onChange={setNewStaffPart} symbol={config.locale.currencySymbol} />
+          <CommissionEditor value={newStaffPart} onChange={setNewStaffPart} symbol={curInfo(newClientCurrency).symbol} />
         </Field>
+        {isMultiCurrency() && (
+          <Field label="Invoicing currency">
+            <CurrencySelect value={newClientCurrency} onChange={setNewClientCurrency} />
+          </Field>
+        )}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
           <Btn variant="secondary" onClick={() => setAddClientOpen(false)}>Cancel</Btn>
           <Btn onClick={addClient} disabled={!newClientName.trim()}>Add {t.client.one}</Btn>
@@ -2548,11 +2654,16 @@ function App() {
           <div>
             <p style={{ fontSize: 13, color: C.textDim, marginBottom: 18 }}>How payouts are calculated for <strong>{editingClient.name}</strong>.</p>
             <Field label={t.agencyShareLabel}>
-              <CommissionEditor value={editAgencyPart} onChange={setEditAgencyPart} symbol={config.locale.currencySymbol} />
+              <CommissionEditor value={editAgencyPart} onChange={setEditAgencyPart} symbol={curInfo(editClientCurrency).symbol} />
             </Field>
             <Field label={t.staffShareLabel}>
-              <CommissionEditor value={editStaffPart} onChange={setEditStaffPart} symbol={config.locale.currencySymbol} />
+              <CommissionEditor value={editStaffPart} onChange={setEditStaffPart} symbol={curInfo(editClientCurrency).symbol} />
             </Field>
+            {isMultiCurrency() && (
+              <Field label="Invoicing currency">
+                <CurrencySelect value={editClientCurrency} onChange={setEditClientCurrency} />
+              </Field>
+            )}
             {(() => {
               const example = 1000;
               const ag = computeShare(editAgencyPart, example, 10);
@@ -2560,7 +2671,7 @@ function App() {
               return (
                 <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
                   <span style={{ fontSize: 11, color: C.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>
-                    On {fmt(example)}{(editAgencyPart.model === "hourly" || editStaffPart.model === "hourly") ? " · 10h" : ""}: you {fmt(ag)} · them {fmt(st)}
+                    On {fmtIn(example, editClientCurrency)}{(editAgencyPart.model === "hourly" || editStaffPart.model === "hourly") ? " · 10h" : ""}: you {fmtIn(ag, editClientCurrency)} · them {fmtIn(st, editClientCurrency)}
                   </span>
                   <div style={{ display: "flex", gap: 8 }}>
                     <Btn variant="secondary" onClick={() => setEditingClient(null)}>Cancel</Btn>
