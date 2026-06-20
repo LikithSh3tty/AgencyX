@@ -1019,6 +1019,16 @@ function CommissionEditor({ value, onChange, symbol = "$" }) {
   );
 }
 
+// Stable layout helpers for the Settings panel — defined at module scope so they keep a
+// constant component identity across re-renders (otherwise inputs lose focus on each keystroke).
+const SettingsSection = ({ title, children }) => (
+  <div className="rise" style={{ background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 16, padding: "18px 20px", marginBottom: 16 }}>
+    <div style={{ fontSize: 12, color: C.accent, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>{title}</div>
+    {children}
+  </div>
+);
+const SettingsRow = ({ children }) => <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
+
 function SettingsPanel({ initial, onClose, onSave }) {
   const [d, setD] = useState(() => JSON.parse(JSON.stringify(initial)));
   const setB = (k, v) => setD((s) => ({ ...s, business: { ...s.business, [k]: v } }));
@@ -1044,13 +1054,6 @@ function SettingsPanel({ initial, onClose, onSave }) {
   };
 
   const addressStr = Array.isArray(d.business.address) ? d.business.address.join("\n") : (d.business.address || "");
-  const Section = ({ title, children }) => (
-    <div className="rise" style={{ background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 16, padding: "18px 20px", marginBottom: 16 }}>
-      <div style={{ fontSize: 12, color: C.accent, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>{title}</div>
-      {children}
-    </div>
-  );
-  const Row = ({ children }) => <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{children}</div>;
   const half = { flex: "1 1 160px", minWidth: 140 };
 
   return (
@@ -1068,16 +1071,16 @@ function SettingsPanel({ initial, onClose, onSave }) {
           <button onClick={onClose} aria-label="Close settings" style={{ background: "rgba(255,255,255,0.05)", border: "none", color: C.textMuted, width: 34, height: 34, borderRadius: 9, cursor: "pointer", fontSize: 15 }}>✖</button>
         </div>
 
-        <Section title="Business">
+        <SettingsSection title="Business">
           <Field label="Business name"><input style={inpStyle} value={d.business.name} onChange={(e) => setB("name", e.target.value)} /></Field>
           <Field label="Tagline"><input style={inpStyle} value={d.business.tagline} onChange={(e) => setB("tagline", e.target.value)} /></Field>
           <Field label="Logo URL (blank = use initial letter)"><input style={inpStyle} value={d.business.logo} onChange={(e) => setB("logo", e.target.value)} placeholder="/logo.svg or https://..." /></Field>
           <Field label="Address (one line per row, shown on invoices)">
             <textarea style={{ ...inpStyle, minHeight: 90, resize: "vertical", fontFamily: "'Outfit',sans-serif" }} value={addressStr} onChange={(e) => setB("address", e.target.value)} />
           </Field>
-        </Section>
+        </SettingsSection>
 
-        <Section title="Branding">
+        <SettingsSection title="Branding">
           <Field label="Accent color">
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <input type="color" value={d.branding.accent} onChange={(e) => setBr("accent", e.target.value)}
@@ -1086,58 +1089,58 @@ function SettingsPanel({ initial, onClose, onSave }) {
             </div>
             <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>The whole app recolors to match. Lighter/darker shades are derived automatically.</div>
           </Field>
-        </Section>
+        </SettingsSection>
 
-        <Section title="Terminology">
-          <Row>
+        <SettingsSection title="Terminology">
+          <SettingsRow>
             <div style={half}><Field label="Client (singular)"><input style={inpStyle} value={d.terms.client.one} onChange={(e) => setTerm("client", "one", e.target.value)} /></Field></div>
             <div style={half}><Field label="Clients (plural)"><input style={inpStyle} value={d.terms.client.many} onChange={(e) => setTerm("client", "many", e.target.value)} /></Field></div>
-          </Row>
-          <Row>
+          </SettingsRow>
+          <SettingsRow>
             <div style={half}><Field label="Staff member (singular)"><input style={inpStyle} value={d.terms.staff.one} onChange={(e) => setTerm("staff", "one", e.target.value)} /></Field></div>
             <div style={half}><Field label="Staff (plural)"><input style={inpStyle} value={d.terms.staff.many} onChange={(e) => setTerm("staff", "many", e.target.value)} /></Field></div>
-          </Row>
-          <Row>
+          </SettingsRow>
+          <SettingsRow>
             <div style={half}><Field label="Revenue item (singular)"><input style={inpStyle} value={d.terms.revenue.one} onChange={(e) => setTerm("revenue", "one", e.target.value)} /></Field></div>
             <div style={half}><Field label="Revenue (plural)"><input style={inpStyle} value={d.terms.revenue.many} onChange={(e) => setTerm("revenue", "many", e.target.value)} /></Field></div>
-          </Row>
-          <Row>
+          </SettingsRow>
+          <SettingsRow>
             <div style={half}><Field label="Agency share label"><input style={inpStyle} value={d.terms.agencyShareLabel} onChange={(e) => setTermFlat("agencyShareLabel", e.target.value)} /></Field></div>
             <div style={half}><Field label="Staff pay label"><input style={inpStyle} value={d.terms.staffShareLabel} onChange={(e) => setTermFlat("staffShareLabel", e.target.value)} /></Field></div>
-          </Row>
-        </Section>
+          </SettingsRow>
+        </SettingsSection>
 
-        <Section title="Currency & Tax">
-          <Row>
+        <SettingsSection title="Currency & Tax">
+          <SettingsRow>
             <div style={half}><Field label="Currency code"><input style={inpStyle} value={d.locale.currency} onChange={(e) => setL("currency", e.target.value.toUpperCase())} placeholder="USD" /></Field></div>
             <div style={half}><Field label="Symbol"><input style={inpStyle} value={d.locale.currencySymbol} onChange={(e) => setL("currencySymbol", e.target.value)} placeholder="$" /></Field></div>
             <div style={half}><Field label="Locale"><input style={inpStyle} value={d.locale.locale} onChange={(e) => setL("locale", e.target.value)} placeholder="en-US" /></Field></div>
-          </Row>
-          <Row>
+          </SettingsRow>
+          <SettingsRow>
             <div style={half}><Field label="Tax label"><input style={inpStyle} value={d.locale.taxLabel} onChange={(e) => setL("taxLabel", e.target.value)} placeholder="VAT / GST" /></Field></div>
             <div style={half}><Field label="Tax rate (%)"><input type="number" step="0.1" style={inpStyle} value={(Number(d.locale.taxRate) || 0) * 100} onChange={(e) => setL("taxRate", (Number(e.target.value) || 0) / 100)} /></Field></div>
-          </Row>
+          </SettingsRow>
           <Field label="Tax line on invoice (optional)"><input style={inpStyle} value={d.locale.taxLine} onChange={(e) => setL("taxLine", e.target.value)} /></Field>
           <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13, color: C.textDim, cursor: "pointer", marginTop: 4 }}>
             <input type="checkbox" checked={d.locale.amountInWords !== false} onChange={(e) => setL("amountInWords", e.target.checked)} style={{ width: 16, height: 16, accentColor: "var(--accent)" }} />
             Show amount in words on invoices
           </label>
-        </Section>
+        </SettingsSection>
 
-        <Section title="Invoice">
+        <SettingsSection title="Invoice">
           <Field label="Invoice title"><input style={inpStyle} value={d.invoice.title} onChange={(e) => setInv("title", e.target.value)} /></Field>
-          <Row>
+          <SettingsRow>
             <div style={half}><Field label="Number format"><input style={{ ...inpStyle, fontFamily: "'JetBrains Mono',monospace" }} value={d.invoice.numberFormat} onChange={(e) => setInv("numberFormat", e.target.value)} /></Field></div>
             <div style={half}><Field label="Fiscal year start month"><input type="number" min="1" max="12" style={inpStyle} value={d.invoice.fiscalYearStartMonth} onChange={(e) => setInv("fiscalYearStartMonth", e.target.value)} /></Field></div>
-          </Row>
+          </SettingsRow>
           <div style={{ fontSize: 11, color: C.textMuted, marginTop: -6, marginBottom: 12 }}>Tokens: {"{FY} {YYYY} {YY} {MM} {SEQ}"}</div>
-          <Row>
+          <SettingsRow>
             <div style={half}><Field label="Line-item label"><input style={inpStyle} value={d.invoice.lineItemLabel} onChange={(e) => setInv("lineItemLabel", e.target.value)} /></Field></div>
             <div style={half}><Field label="Payment due (days)"><input type="number" min="0" style={inpStyle} value={d.invoice.dueDays} onChange={(e) => setInv("dueDays", e.target.value)} /></Field></div>
-          </Row>
+          </SettingsRow>
           <Field label="Notes"><input style={inpStyle} value={d.invoice.notes} onChange={(e) => setInv("notes", e.target.value)} /></Field>
           <Field label="Signatory"><input style={inpStyle} value={d.invoice.signatory} onChange={(e) => setInv("signatory", e.target.value)} /></Field>
-        </Section>
+        </SettingsSection>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
           <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
